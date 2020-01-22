@@ -272,11 +272,11 @@ section_table:
 	# Kernel attributes; used by setup.  This is part 1 of the
 	# header, from the old boot sector.
 
-	.section ".header", "a"
+	.section ".header", "a" ==> .head = 495 in setup.ld (0x1ef)
 	.globl	sentinel
 sentinel:	.byte 0xff, 0xff        /* Used to detect broken loaders */
 
-	.globl	hdr
+	.globl	hdr ==> (0x1f1)
 hdr:
 setup_sects:	.byte 0			/* Filled in by build.c */
 root_flags:	.word ROOT_RDONLY
@@ -294,15 +294,16 @@ _start:
 		# tries to generate a 3-byte jump here, which causes
 		# everything else to push off to the wrong offset.
 		.byte	0xeb		# short (2-byte) jump
-		.byte	start_of_setup-1f
+		.byte	start_of_setup-1f ==> Jump to start_of_setup (offset = start_of_setup - 1f)
 1:
 
 	# Part 2 of the header, from the old setup.S
 
+==> Start define various variables
 		.ascii	"HdrS"		# header signature
 		.word	0x020f		# header version number (>= 0x0105)
 					# or else old loadlin-1.5 will fail)
-		.globl realmode_swtch
+		.globl realmode_swtch  ==> swtch is typo?
 realmode_swtch:	.word	0, 0		# default_switch, SETUPSEG
 start_sys_seg:	.word	SYSSEG		# obsolete and meaningless, but just
 					# in case something decided to "use" it
@@ -495,12 +496,12 @@ pref_address:		.quad LOAD_PHYSICAL_ADDR	# preferred load addr
 # where the compressed data starts. Problems will occur when the output
 # pointer overruns the input pointer.
 #
-# The output pointer can only overrun the input pointer if the input
+# The output pointer can only overrun the input pointer if the input ==> output pointer is moving faster than the input pointer?
 # pointer is moving faster than the output pointer.  A condition only
 # triggered by data whose compressed form is larger than the uncompressed
 # form.
 #
-# The worst case at the block level is a growth of the compressed data
+# The worst case at the block level is a growth of the compressed data ==> If the data cannot be compressed, 5 bytes are still required for block information.
 # of 5 bytes per 32767 bytes.
 #
 # The worst case internal to a compressed block is very hard to figure.
@@ -584,18 +585,18 @@ start_of_setup:
 # stack behind its own code, so we can't blindly put it directly past the heap.
 
 	movw	%ss, %dx
-	cmpw	%ax, %dx	# %ds == %ss?
+	cmpw	%ax, %dx	# %ds == %ss?  ==> What does %ds==%ss mean?
 	movw	%sp, %dx
 	je	2f		# -> assume %sp is reasonably set
 
 	# Invalid %ss, make up a new stack
-	movw	$_end, %dx
-	testb	$CAN_USE_HEAP, loadflags
+	movw	$_end, %dx ==> "_end" is defined in setup.ld
+	testb	$CAN_USE_HEAP, loadflags ==> If CAN_USE_HEAP, stack start from heap_end_ptr, else from _end
 	jz	1f
 	movw	heap_end_ptr, %dx
 1:	addw	$STACK_SIZE, %dx
 	jnc	2f
-	xorw	%dx, %dx	# Prevent wraparound
+	xorw	%dx, %dx	# Prevent wraparound ==> ?
 
 2:	# Now %dx should point to the end of our stack space
 	andw	$~3, %dx	# dword align (might as well...)
@@ -607,8 +608,8 @@ start_of_setup:
 
 # We will have entered with %cs = %ds+0x20, normalize %cs so
 # it is on par with the other segments.
-	pushw	%ds
-	pushw	$6f
+	pushw	%ds ==> Why push %ds?
+	pushw	$6f ==> Jump to "6:"
 	lretw
 6:
 
@@ -622,7 +623,7 @@ start_of_setup:
 	xorl	%eax, %eax
 	subw	%di, %cx
 	shrw	$2, %cx
-	rep; stosl
+	rep; stosl ==> Save eax(0) to es:di
 
 # Jump to C code (should not return)
 	calll	main

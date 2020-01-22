@@ -28,7 +28,7 @@ typedef struct { } arch_spinlock_t;
 
 #endif
 
-typedef struct {
+typedef struct { ==> For uni-processor, spin lock just disables preempt option
 	/* no debug version on UP */
 } arch_rwlock_t;
 

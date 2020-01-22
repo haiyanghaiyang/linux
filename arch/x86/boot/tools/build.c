@@ -353,7 +353,7 @@ int main(int argc, char ** argv)
 		die("Unable to write `%s': %m", argv[4]);
 
 	/* Copy the setup code */
-	file = fopen(argv[1], "r");
+	file = fopen(argv[1], "r"); ==> setup.bin
 	if (!file)
 		die("Unable to open `%s': %m", argv[1]);
 	c = fread(buf, 1, sizeof(buf), file);
@@ -377,12 +377,12 @@ int main(int argc, char ** argv)
 	update_pecoff_setup_and_reloc(i);
 
 	/* Set the default root device */
-	put_unaligned_le16(DEFAULT_ROOT_DEV, &buf[508]);
+	put_unaligned_le16(DEFAULT_ROOT_DEV, &buf[508]); ==> root_dev
 
 	printf("Setup is %d bytes (padded to %d bytes).\n", c, i);
 
 	/* Open and stat the kernel file */
-	fd = open(argv[2], O_RDONLY);
+	fd = open(argv[2], O_RDONLY); ==> vmlinux.bin
 	if (fd < 0)
 		die("Unable to open `%s': %m", argv[2]);
 	if (fstat(fd, &sb))
@@ -404,7 +404,7 @@ int main(int argc, char ** argv)
 
 	/* Patch the setup code with the appropriate size parameters */
 	buf[0x1f1] = setup_sectors-1;
-	put_unaligned_le32(sys_size, &buf[0x1f4]);
+	put_unaligned_le32(sys_size, &buf[0x1f4]); ==> setup_sectors;
 
 	update_pecoff_text(setup_sectors * 512, i + (sys_size * 16));
 	init_sz = get_unaligned_le32(&buf[0x260]);

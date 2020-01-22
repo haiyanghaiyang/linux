@@ -27,7 +27,7 @@ SYM_FUNC_START_NOALIGN(protected_mode_jump)
 	xorl	%ebx, %ebx
 	movw	%cs, %bx
 	shll	$4, %ebx
-	addl	%ebx, 2f
+	addl	%ebx, 2f  ==> %ebx = %cs*16+2
 	jmp	1f			# Short jump to serialize on 386/486
 1:
 
@@ -36,7 +36,7 @@ SYM_FUNC_START_NOALIGN(protected_mode_jump)
 
 	movl	%cr0, %edx
 	orb	$X86_CR0_PE, %dl	# Protected mode
-	movl	%edx, %cr0
+	movl	%edx, %cr0  ==> Enable PE flag in cr0
 
 	# Transition to 32-bit mode
 	.byte	0x66, 0xea		# ljmpl opcode
@@ -44,11 +44,11 @@ SYM_FUNC_START_NOALIGN(protected_mode_jump)
 	.word	__BOOT_CS		# segment
 SYM_FUNC_END(protected_mode_jump)
 
-	.code32
+	.code32 ==> 32-bit mode
 	.section ".text32","ax"
 SYM_FUNC_START_LOCAL_NOALIGN(.Lin_pm32)
 	# Set up data segments for flat 32-bit mode
-	movl	%ecx, %ds
+	movl	%ecx, %ds ==> %ecx = __BOOT_DS as above code
 	movl	%ecx, %es
 	movl	%ecx, %fs
 	movl	%ecx, %gs

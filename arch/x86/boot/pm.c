@@ -119,6 +119,6 @@ void go_to_protected_mode(void)
 	/* Actual transition to protected mode... */
 	setup_idt();
 	setup_gdt();
-	protected_mode_jump(boot_params.hdr.code32_start,
-			    (u32)&boot_params + (ds() << 4));
+	protected_mode_jump(boot_params.hdr.code32_start, ==> jump to 0x100000 (1MB) where vmlinuz is loaded by grub, which entry is startup_32(startup_64)
+			    (u32)&boot_params + (ds() << 4)); ==> real mode, get memory address for boot_params
 }

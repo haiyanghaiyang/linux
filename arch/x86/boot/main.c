@@ -36,7 +36,7 @@ static void copy_boot_params(void)
 		(const struct old_cmdline *)OLD_CL_ADDRESS;
 
 	BUILD_BUG_ON(sizeof(boot_params) != 4096);
-	memcpy(&boot_params.hdr, &hdr, sizeof(hdr));
+	memcpy(&boot_params.hdr, &hdr, sizeof(hdr)); ==> hdr is defined in header.S
 
 	if (!boot_params.hdr.cmd_line_ptr &&
 	    oldcmd->cl_magic == OLD_CL_MAGIC) {
@@ -108,7 +108,7 @@ static void set_bios_mode(void)
 	initregs(&ireg);
 	ireg.ax = 0xec00;
 	ireg.bx = 2;
-	intcall(0x15, &ireg, NULL);
+	intcall(0x15, &ireg, NULL); ==> Change to x86_64 long mode
 #endif
 }
 
@@ -118,7 +118,7 @@ static void init_heap(void)
 
 	if (boot_params.hdr.loadflags & CAN_USE_HEAP) {
 		asm("leal %P1(%%esp),%0"
-		    : "=r" (stack_end) : "i" (-STACK_SIZE));
+		    : "=r" (stack_end) : "i" (-STACK_SIZE)); ==> stack_end = %%esp - STACK_SIZE
 
 		heap_end = (char *)
 			((size_t)boot_params.hdr.heap_end_ptr + 0x200);
