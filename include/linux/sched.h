@@ -484,10 +484,10 @@ struct sched_entity {
 };
 
 struct sched_rt_entity {
-	struct list_head		run_list;
+	struct list_head		run_list; ==> list of all running processes
 	unsigned long			timeout;
 	unsigned long			watchdog_stamp;
-	unsigned int			time_slice;
+	unsigned int			time_slice; ==> maximum amount of time the task is allowed to run
 	unsigned short			on_rq;
 	unsigned short			on_list;
 
@@ -646,8 +646,8 @@ struct task_struct {
 	void				*stack;
 	refcount_t			usage;
 	/* Per task flags (PF_*), defined further below: */
-	unsigned int			flags;
-	unsigned int			ptrace;
+	unsigned int			flags; ==> Provide more information regarding what the task is undergoing
+	unsigned int			ptrace; ==> Performance measurement
 
 #ifdef CONFIG_SMP
 	struct llist_node		wake_entry;
@@ -675,7 +675,7 @@ struct task_struct {
 	int				prio;
 	int				static_prio;
 	int				normal_prio;
-	unsigned int			rt_priority;
+	unsigned int			rt_priority; ==> real time task priority
 
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
@@ -701,7 +701,7 @@ struct task_struct {
 	unsigned int			btrace_seq;
 #endif
 
-	unsigned int			policy;
+	unsigned int			policy; ==> type of process: time sharing or real time
 	int				nr_cpus_allowed;
 	const cpumask_t			*cpus_ptr;
 	cpumask_t			cpus_mask;
@@ -729,8 +729,8 @@ struct task_struct {
 	struct rb_node			pushable_dl_tasks;
 #endif
 
-	struct mm_struct		*mm;
-	struct mm_struct		*active_mm;
+	struct mm_struct		*mm; ==> address space and memory management related information
+	struct mm_struct		*active_mm; ==> the most recently accessed address space
 
 	/* Per-thread vma caching: */
 	struct vmacache			vmacache;
@@ -804,7 +804,7 @@ struct task_struct {
 	 */
 
 	/* Real parent process: */
-	struct task_struct __rcu	*real_parent;
+	struct task_struct __rcu	*real_parent; ==> Points to real parent. The "parent" points to ptrace process.
 
 	/* Recipient of SIGCHLD, wait4() reports: */
 	struct task_struct __rcu	*parent;
@@ -814,7 +814,7 @@ struct task_struct {
 	 */
 	struct list_head		children;
 	struct list_head		sibling;
-	struct task_struct		*group_leader;
+	struct task_struct		*group_leader; ==> Leader of the group of the processes
 
 	/*
 	 * 'ptraced' is the list of tasks this task is using ptrace() on.
@@ -855,8 +855,8 @@ struct task_struct {
 	atomic_t			tick_dep_mask;
 #endif
 	/* Context switch counts: */
-	unsigned long			nvcsw;
-	unsigned long			nivcsw;
+	unsigned long			nvcsw; ==> countso f context switches that are not based on kernel preemption
+	unsigned long			nivcsw; ==> counts of kernel preemption
 
 	/* Monotonic time in nsecs: */
 	u64				start_time;

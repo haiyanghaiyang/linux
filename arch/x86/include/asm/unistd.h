@@ -45,7 +45,7 @@
 # define __ARCH_WANT_SYS_TIME32
 # define __ARCH_WANT_SYS_UTIME32
 # define __ARCH_WANT_SYS_WAITPID
-# define __ARCH_WANT_SYS_FORK
+# define __ARCH_WANT_SYS_FORK ==> x86 doesn't implment own sys_fork but use the common one in kernel/fork.c
 # define __ARCH_WANT_SYS_VFORK
 # define __ARCH_WANT_SYS_CLONE
 # define __ARCH_WANT_SYS_CLONE3

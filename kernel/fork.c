@@ -1436,7 +1436,7 @@ static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 			spin_unlock(&fs->lock);
 			return -EAGAIN;
 		}
-		fs->users++;
+		fs->users++; ==> increase reference and keep tsk->fs for child
 		spin_unlock(&fs->lock);
 		return 0;
 	}
@@ -2508,7 +2508,7 @@ long do_fork(unsigned long clone_flags,
 pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 {
 	struct kernel_clone_args args = {
-		.flags		= ((flags | CLONE_VM | CLONE_UNTRACED) & ~CSIGNAL),
+		.flags		= ((flags | CLONE_VM | CLONE_UNTRACED) & ~CSIGNAL), ==> threads share VM (virtual memory) address
 		.exit_signal	= (flags & CSIGNAL),
 		.stack		= (unsigned long)fn,
 		.stack_size	= (unsigned long)arg,
@@ -2534,10 +2534,10 @@ SYSCALL_DEFINE0(fork)
 #endif
 
 #ifdef __ARCH_WANT_SYS_VFORK
-SYSCALL_DEFINE0(vfork)
+SYSCALL_DEFINE0(vfork) ==> Parent has to be blocked until child calls exit or exec().
 {
 	struct kernel_clone_args args = {
-		.flags		= CLONE_VFORK | CLONE_VM,
+		.flags		= CLONE_VFORK | CLONE_VM, ==> vfork is thread sharing VM address with parent
 		.exit_signal	= SIGCHLD,
 	};
 
@@ -2550,7 +2550,7 @@ SYSCALL_DEFINE0(vfork)
 SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
 		 int __user *, parent_tidptr,
 		 unsigned long, tls,
-		 int __user *, child_tidptr)
+		 int __user *, child_tidptr) ==> lightweight process with some context same as parent
 #elif defined(CONFIG_CLONE_BACKWARDS2)
 SYSCALL_DEFINE5(clone, unsigned long, newsp, unsigned long, clone_flags,
 		 int __user *, parent_tidptr,

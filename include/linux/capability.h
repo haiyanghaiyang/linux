@@ -28,8 +28,8 @@ typedef struct kernel_cap_struct {
 /* same as vfs_ns_cap_data but in cpu endian and always filled completely */
 struct cpu_vfs_cap_data {
 	__u32 magic_etc;
-	kernel_cap_t permitted;
-	kernel_cap_t inheritable;
+	kernel_cap_t permitted; ==> The capabilities that can be made either effective or inheritable.
+	kernel_cap_t inheritable; ==> The capabilities that are passed throug a call to execve.
 	kuid_t rootid;
 };
 
