@@ -233,7 +233,7 @@ void __wake_up_sync(struct wait_queue_head *wq_head, unsigned int mode);
 #define wake_up_interruptible_sync_poll_locked(x, m)				\
 	__wake_up_locked_sync_key((x), TASK_INTERRUPTIBLE, poll_to_key(m))
 
-#define ___wait_cond_timeout(condition)						\
+#define ___wait_cond_timeout(condition)						\ ==> Return true if condition is true or timeout
 ({										\
 	bool __cond = (condition);						\
 	if (__cond && !__ret)							\
@@ -267,24 +267,24 @@ extern void init_wait_entry(struct wait_queue_entry *wq_entry, int flags);
 										\
 	init_wait_entry(&__wq_entry, exclusive ? WQ_FLAG_EXCLUSIVE : 0);	\
 	for (;;) {								\
-		long __int = prepare_to_wait_event(&wq_head, &__wq_entry, state);\
+		long __int = prepare_to_wait_event(&wq_head, &__wq_entry, state);\ ==> check signal
 										\
-		if (condition)							\
+		if (condition)							\ ==> Exit wait if condition is true
 			break;							\
 										\
-		if (___wait_is_interruptible(state) && __int) {			\
+		if (___wait_is_interruptible(state) && __int) {			\ ==> Exit if it is interruptible and interrupt happens
 			__ret = __int;						\
 			goto __out;						\
 		}								\
 										\
-		cmd;								\
+		cmd;								\ ==> Execute cmd like "schedule()"
 	}									\
-	finish_wait(&wq_head, &__wq_entry);					\
+	finish_wait(&wq_head, &__wq_entry);					\ ==> Set task to running and remove it from wait queue
 __out:	__ret;									\
 })
 
 #define __wait_event(wq_head, condition)					\
-	(void)___wait_event(wq_head, condition, TASK_UNINTERRUPTIBLE, 0, 0,	\
+	(void)___wait_event(wq_head, condition, TASK_UNINTERRUPTIBLE, 0, 0,	\ ==> wait unintrruptible and sleep with schedule()
 			    schedule())
 
 /**
@@ -376,7 +376,7 @@ do {										\
 	long __ret = timeout;							\
 	might_sleep();								\
 	if (!___wait_cond_timeout(condition))					\
-		__ret = __wait_event_timeout(wq_head, condition, timeout);	\
+		__ret = __wait_event_timeout(wq_head, condition, timeout);	\ ==> Return true if condition is true or timeout
 	__ret;									\
 })
 

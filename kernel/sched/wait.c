@@ -278,7 +278,7 @@ long prepare_to_wait_event(struct wait_queue_head *wq_head, struct wait_queue_en
 	long ret = 0;
 
 	spin_lock_irqsave(&wq_head->lock, flags);
-	if (signal_pending_state(state, current)) {
+	if (signal_pending_state(state, current)) { ==> There is pending signal
 		/*
 		 * Exclusive waiter must not fail if it was selected by wakeup,
 		 * it should "consume" the condition we were waiting for.
@@ -294,9 +294,9 @@ long prepare_to_wait_event(struct wait_queue_head *wq_head, struct wait_queue_en
 		list_del_init(&wq_entry->entry);
 		ret = -ERESTARTSYS;
 	} else {
-		if (list_empty(&wq_entry->entry)) {
+		if (list_empty(&wq_entry->entry)) { ==> If current entry is not in the wait queue
 			if (wq_entry->flags & WQ_FLAG_EXCLUSIVE)
-				__add_wait_queue_entry_tail(wq_head, wq_entry);
+				__add_wait_queue_entry_tail(wq_head, wq_entry); ==> Add at end of the queue for exclusive wakeup, since each time only one task is waken up, follow FIFO policy.
 			else
 				__add_wait_queue(wq_head, wq_entry);
 		}

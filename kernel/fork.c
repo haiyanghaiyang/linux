@@ -1305,7 +1305,7 @@ static void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 			 * We don't check the error code - if userspace has
 			 * not set up a proper pointer then tough luck.
 			 */
-			put_user(0, tsk->clear_child_tid);
+			put_user(0, tsk->clear_child_tid); ==> *clear_child_tid = 0. This is a user space pointer.
 			do_futex(tsk->clear_child_tid, FUTEX_WAKE,
 					1, NULL, NULL, 0, 0);
 		}
@@ -1317,7 +1317,7 @@ static void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 	 * Also kthread_stop() uses this completion for synchronization.
 	 */
 	if (tsk->vfork_done)
-		complete_vfork_done(tsk);
+		complete_vfork_done(tsk); ==> Wakeup parent task for task done
 }
 
 void exit_mm_release(struct task_struct *tsk, struct mm_struct *mm)

@@ -2024,11 +2024,11 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 		return -ENODEV;
 	}
 
-	data = of_device_get_match_data(dev);
-	smmu->version = data->version;
+	data = of_device_get_match_data(dev); ==> Match device tree node with modules defined in arm_smmu_of_match table.
+	smmu->version = data->version; ==> Get matched device version and model in arm_smmu_of_match table.
 	smmu->model = data->model;
 
-	legacy_binding = of_find_property(dev->of_node, "mmu-masters", NULL);
+	legacy_binding = of_find_property(dev->of_node, "mmu-masters", NULL); ==> Legacy property
 	if (legacy_binding && !using_generic_binding) {
 		if (!using_legacy_binding) {
 			pr_notice("deprecated \"mmu-masters\" DT property in use; %s support unavailable\n",
@@ -2042,7 +2042,7 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 		return -ENODEV;
 	}
 
-	if (of_dma_is_coherent(dev->of_node))
+	if (of_dma_is_coherent(dev->of_node)) ==> check whether the device is coherent
 		smmu->features |= ARM_SMMU_FEAT_COHERENT_WALK;
 
 	return 0;
@@ -2110,18 +2110,18 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	smmu->dev = dev;
 
 	if (dev->of_node)
-		err = arm_smmu_device_dt_probe(pdev, smmu);
+		err = arm_smmu_device_dt_probe(pdev, smmu); ==> device tree is found
 	else
 		err = arm_smmu_device_acpi_probe(pdev, smmu);
 
 	if (err)
 		return err;
 
-	smmu = arm_smmu_impl_init(smmu);
+	smmu = arm_smmu_impl_init(smmu); ==> Update vendor specific implementation
 	if (IS_ERR(smmu))
 		return PTR_ERR(smmu);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0); ==> Get IO resource information. Question: Who provides the information?
 	ioaddr = res->start;
 	smmu->base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(smmu->base))

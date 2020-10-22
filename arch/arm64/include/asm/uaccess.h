@@ -336,7 +336,7 @@ do {									\
 	__typeof__(*(ptr)) __pu_val = (x);				\
 	__chk_user_ptr(ptr);						\
 	uaccess_enable_not_uao();					\
-	switch (sizeof(*(ptr))) {					\
+	switch (sizeof(*(ptr))) {					\ ==> (*ptr) = x
 	case 1:								\
 		__put_user_asm("strb", "sttrb", "%w", __pu_val, (ptr),	\
 			       (err), ARM64_HAS_UAO);			\
@@ -375,10 +375,10 @@ do {									\
 ({									\
 	int __pu_err = 0;						\
 	__put_user_error((x), (ptr), __pu_err);				\
-	__pu_err;							\
+	__pu_err;							\ ==> Return error
 })
 
-#define put_user	__put_user
+#define put_user	__put_user ==> put value into user space pointer
 
 extern unsigned long __must_check __arch_copy_from_user(void *to, const void __user *from, unsigned long n);
 #define raw_copy_from_user(to, from, n)					\

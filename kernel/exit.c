@@ -440,7 +440,7 @@ static void exit_mm(void)
 	exit_mm_release(current, mm);
 	if (!mm)
 		return;
-	sync_mm_rss(mm);
+	sync_mm_rss(mm); ==> Sync rss counter into mm
 	/*
 	 * Serialize with any possible pending coredump.
 	 * We must hold mmap_sem around checking core_state
@@ -469,7 +469,7 @@ static void exit_mm(void)
 			if (!self.task) /* see coredump_finish() */
 				break;
 			freezable_schedule();
-		}
+		} ==> Wait for core dump finishing
 		__set_current_state(TASK_RUNNING);
 		down_read(&mm->mmap_sem);
 	}
@@ -482,7 +482,7 @@ static void exit_mm(void)
 	enter_lazy_tlb(mm, current);
 	task_unlock(current);
 	mm_update_next_owner(mm);
-	mmput(mm);
+	mmput(mm); ==> remove memory map
 	if (test_thread_flag(TIF_MEMDIE))
 		exit_oom_victim();
 }
@@ -732,7 +732,7 @@ void __noreturn do_exit(long code)
 	 */
 	set_fs(USER_DS);
 
-	ptrace_event(PTRACE_EVENT_EXIT, code);
+	ptrace_event(PTRACE_EVENT_EXIT, code); ==> Pass the exit code and notify parent process if the task is being traced.
 
 	validate_creds_for_do_exit(tsk);
 
@@ -796,7 +796,7 @@ void __noreturn do_exit(long code)
 	exit_files(tsk);
 	exit_fs(tsk);
 	if (group_dead)
-		disassociate_ctty(1);
+		disassociate_ctty(1); ==> disassociate the task leader from its controller tty
 	exit_task_namespaces(tsk);
 	exit_task_work(tsk);
 	exit_thread(tsk);
@@ -819,7 +819,7 @@ void __noreturn do_exit(long code)
 	flush_ptrace_hw_breakpoint(tsk);
 
 	exit_tasks_rcu_start();
-	exit_notify(tsk, group_dead);
+	exit_notify(tsk, group_dead); ==> Set task state to EXIT_ZOMBIE
 	proc_exit_connector(tsk);
 	mpol_put_task_policy(tsk);
 #ifdef CONFIG_FUTEX
@@ -1423,9 +1423,9 @@ static long do_wait(struct wait_opts *wo)
 
 	trace_sched_process_wait(wo->wo_pid);
 
-	init_waitqueue_func_entry(&wo->child_wait, child_wait_callback);
+	init_waitqueue_func_entry(&wo->child_wait, child_wait_callback); ==> Init a wait entry with function callback
 	wo->child_wait.private = current;
-	add_wait_queue(&current->signal->wait_chldexit, &wo->child_wait);
+	add_wait_queue(&current->signal->wait_chldexit, &wo->child_wait); ==> Add the entry into queue, signal->wait_chldexit
 repeat:
 	/*
 	 * If there is nothing that can match our criteria, just get out.
@@ -1557,7 +1557,7 @@ SYSCALL_DEFINE5(waitid, int, which, pid_t, upid, struct siginfo __user *,
 	if (err > 0) {
 		signo = SIGCHLD;
 		err = 0;
-		if (ru && copy_to_user(ru, &r, sizeof(struct rusage)))
+		if (ru && copy_to_user(ru, &r, sizeof(struct rusage))) ==> Copy rusage to ru
 			return -EFAULT;
 	}
 	if (!infop)
@@ -1566,7 +1566,7 @@ SYSCALL_DEFINE5(waitid, int, which, pid_t, upid, struct siginfo __user *,
 	if (!user_access_begin(infop, sizeof(*infop)))
 		return -EFAULT;
 
-	unsafe_put_user(signo, &infop->si_signo, Efault);
+	unsafe_put_user(signo, &infop->si_signo, Efault); ==> Copy signal info into &infop
 	unsafe_put_user(0, &infop->si_errno, Efault);
 	unsafe_put_user(info.cause, &infop->si_code, Efault);
 	unsafe_put_user(info.pid, &infop->si_pid, Efault);
