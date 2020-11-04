@@ -3891,6 +3891,7 @@ void unblank_screen(void)
  */
 static void blank_screen_t(unsigned long dummy)
 {
+	return;
 	if (unlikely(!keventd_up())) {
 		mod_timer(&console_timer, jiffies + (blankinterval * HZ));
 		return;

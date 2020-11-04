@@ -364,6 +364,7 @@ static void fbcon_update_softback(struct vc_data *vc)
 
 static void fb_flashcursor(struct work_struct *work)
 {
+#if 0
 	struct fb_info *info = container_of(work, struct fb_info, queue);
 	struct fbcon_ops *ops = info->fbcon_par;
 	struct vc_data *vc = NULL;
@@ -394,6 +395,7 @@ static void fb_flashcursor(struct work_struct *work)
 	ops->cursor(vc, info, mode, softback_lines, get_color(vc, info, c, 1),
 		    get_color(vc, info, c, 0));
 	console_unlock();
+#endif
 }
 
 static void cursor_timer_handler(unsigned long dev_addr)
@@ -580,6 +582,7 @@ static void fbcon_prepare_logo(struct vc_data *vc, struct fb_info *info,
 	if (fb_get_color_depth(&info->var, &info->fix) == 1)
 		erase &= ~0x400;
 	logo_height = fb_prepare_logo(info, ops->rotate);
+	logo_height += (info->var.yres/2) - (214/2);
 	logo_lines = DIV_ROUND_UP(logo_height, vc->vc_font.height);
 	q = (unsigned short *) (vc->vc_origin +
 				vc->vc_size_row * rows);
@@ -1301,6 +1304,7 @@ static void fbcon_clear_margins(struct vc_data *vc, int bottom_only)
 
 static void fbcon_cursor(struct vc_data *vc, int mode)
 {
+#if 0
 	struct fb_info *info = registered_fb[con2fb_map[vc->vc_num]];
 	struct fbcon_ops *ops = info->fbcon_par;
 	int y;
@@ -1326,6 +1330,7 @@ static void fbcon_cursor(struct vc_data *vc, int mode)
 
 	ops->cursor(vc, info, mode, y, get_color(vc, info, c, 1),
 		    get_color(vc, info, c, 0));
+#endif
 }
 
 static int scrollback_phys_max = 0;
@@ -3199,6 +3204,8 @@ static void fbcon_new_modelist(struct fb_info *info)
 		if (!fb_display[i].mode)
 			continue;
 		vc = vc_cons[i].d;
+		if (!vc)
+			continue;
 		display_to_var(&var, &fb_display[i]);
 		mode = fb_find_nearest_mode(fb_display[i].mode,
 					    &info->modelist);

@@ -509,6 +509,16 @@ static void option_instat_callback(struct urb *urb);
 #define INOVIA_VENDOR_ID			0x20a6
 #define INOVIA_SEW858				0x1105
 
+/* EC20 4G*/
+#define QUECTEL_VENDOR_ID			0x2C7C
+#define QUECTEL_PRODUCT_EC20			0X0125
+
+/* GOSUNCN 4G modems */
+#define GOSUNCN_VENDOR_ID			0x19d2
+#define GOSUNCN_PRODUCT_0117			0x0117
+#define GOSUNCN_PRODUCT_0199                    0x0199
+#define GOSUNCN_PRODUCT_1476                    0x1476
+
 /* VIA Telecom */
 #define VIATELECOM_VENDOR_ID			0x15eb
 #define VIATELECOM_PRODUCT_CDS7			0x0001
@@ -624,6 +634,10 @@ static const struct option_blacklist_info sierra_mc73xx_blacklist = {
 };
 
 static const struct usb_device_id option_ids[] = {
+	{ USB_DEVICE(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EC20)},/* EC20*/
+	{ USB_DEVICE(GOSUNCN_VENDOR_ID, GOSUNCN_PRODUCT_0117)},/* ME3630-w */
+        { USB_DEVICE(GOSUNCN_VENDOR_ID, GOSUNCN_PRODUCT_0199)},/* ME3630-w */
+        { USB_DEVICE(GOSUNCN_VENDOR_ID, GOSUNCN_PRODUCT_1476)},/* ME3630-w */
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_COLT) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA_LIGHT) },
@@ -1860,6 +1874,32 @@ static int option_probe(struct usb_serial *serial,
 	struct usb_device_descriptor *dev_desc = &serial->dev->descriptor;
 	const struct option_blacklist_info *blacklist;
 
+	/* GOSUNCN 4G modems */
+	printk("idVendor=%x, idProduct=%x, bInterfaceNumber =%d\r\n",
+					serial->dev->descriptor.idVendor,
+					serial->dev->descriptor.idProduct,
+					serial->interface->cur_altsetting->desc. bInterfaceNumber);
+
+	if (serial->dev->descriptor.idVendor == 0x19d2 &&
+			serial->dev->descriptor.idProduct == 0x1476 &&
+			serial->interface->cur_altsetting->desc. bInterfaceNumber == 3)
+			return -ENODEV;
+
+	if (serial->dev->descriptor.idVendor == 0x19d2 &&
+			serial->dev->descriptor.idProduct == 0x1476 &&
+			serial->interface->cur_altsetting->desc. bInterfaceNumber == 4)
+			return -ENODEV;
+
+	if (serial->dev->descriptor.idVendor == 0x19d2 &&
+			serial->dev->descriptor.idProduct == 0x1509 &&
+			serial->interface->cur_altsetting->desc. bInterfaceNumber == 4)
+			return -ENODEV;
+
+	if (serial->dev->descriptor.idVendor == 0x19d2 &&
+			serial->dev->descriptor.idProduct == 0x1509 &&
+			serial->interface->cur_altsetting->desc. bInterfaceNumber == 5)
+			return -ENODEV;
+
 	/* Never bind to the CD-Rom emulation interface	*/
 	if (iface_desc->bInterfaceClass == 0x08)
 		return -ENODEV;
@@ -1877,9 +1917,22 @@ static int option_probe(struct usb_serial *serial,
 	 * Don't bind network interface on Samsung GT-B3730, it is handled by
 	 * a separate module.
 	 */
-	if (dev_desc->idVendor == cpu_to_le16(SAMSUNG_VENDOR_ID) &&
+	/*if (dev_desc->idVendor == cpu_to_le16(SAMSUNG_VENDOR_ID) &&
 	    dev_desc->idProduct == cpu_to_le16(SAMSUNG_PRODUCT_GT_B3730) &&
 	    iface_desc->bInterfaceClass != USB_CLASS_CDC_DATA)
+		return -ENODEV;*/
+	if (dev_desc->idVendor == cpu_to_le16(0x05C6) &&
+		dev_desc->idProduct == cpu_to_le16(0x9003) &&
+		iface_desc->bInterfaceNumber >= 4)
+		return -ENODEV;
+
+	if (dev_desc->idVendor == cpu_to_le16(0x05C6) &&
+		dev_desc->idProduct == cpu_to_le16(0x9215) &&
+		iface_desc->bInterfaceNumber >= 4)
+		return -ENODEV;
+
+	if (dev_desc->idVendor == cpu_to_le16(0x2c7C) &&
+		iface_desc->bInterfaceNumber >= 4)
 		return -ENODEV;
 
 	/* Store the blacklist info so we can use it during attach. */

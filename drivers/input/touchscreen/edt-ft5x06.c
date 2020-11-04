@@ -238,13 +238,13 @@ static irqreturn_t edt_ft5x06_ts_isr(int irq, void *dev_id)
 		down = type != TOUCH_EVENT_UP;
 
 		input_mt_slot(tsdata->input, id);
-		input_mt_report_slot_state(tsdata->input, MT_TOOL_FINGER, down);
+		input_mt_report_slot_state(tsdata->input, MT_TOOL_PEN, down);
 
 		if (!down)
 			continue;
 
-		input_report_abs(tsdata->input, ABS_MT_POSITION_X, x);
-		input_report_abs(tsdata->input, ABS_MT_POSITION_Y, y);
+		input_report_abs(tsdata->input, ABS_MT_POSITION_X, y);
+		input_report_abs(tsdata->input, ABS_MT_POSITION_Y, x);
 	}
 
 	input_mt_report_pointer_emulation(tsdata->input, true);
@@ -941,9 +941,12 @@ static int edt_ft5x06_i2c_ts_probe_dt(struct device *dev,
 	 * irq_pin is not needed for DT setup.
 	 * irq is associated via 'interrupts' property in DT
 	 */
+	int irq_edt = of_get_named_gpio(np, "irq-gpios", 0);
 	tsdata->irq_pin = -EINVAL;
 	tsdata->reset_pin = of_get_named_gpio(np, "reset-gpios", 0);
 	tsdata->wake_pin = of_get_named_gpio(np, "wake-gpios", 0);
+	/*irq_pin must be the input mode*/
+	gpio_direction_input(irq_edt);
 
 	return 0;
 }
