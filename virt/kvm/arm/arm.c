@@ -103,7 +103,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret, cpu;
 
-	ret = kvm_arm_setup_stage2(kvm, type);
+	ret = kvm_arm_setup_stge2(kvm, type);
 	if (ret)
 		return ret;
 
@@ -118,7 +118,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	if (ret)
 		goto out_fail_alloc;
 
-	ret = create_hyp_mappings(kvm, kvm + 1, PAGE_HYP);
+	ret = create_hyp_mappings(kvm, kvm + 1, PAGE_HYP); ==> setup hyp mapping for kvm structure
 	if (ret)
 		goto out_free_stage2_pgd;
 
@@ -799,7 +799,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 * preempted we make sure ticks after that is not counted as
 		 * guest time.
 		 */
-		guest_exit();
+		guest_exit(); ==> Exist guest and enter hypervisor mode
 		trace_kvm_exit(ret, kvm_vcpu_trap_get_class(vcpu), *vcpu_pc(vcpu));
 
 		/* Exit types that need handling before we can be preempted */
@@ -1322,7 +1322,7 @@ static void cpu_hyp_reinit(void)
 {
 	kvm_init_host_cpu_context(&this_cpu_ptr(&kvm_host_data)->host_ctxt);
 
-	cpu_hyp_reset();
+	cpu_hyp_reset(); ==> reset cpu hypervisor
 
 	if (is_kernel_in_hyp_mode())
 		kvm_timer_init_vhe();
@@ -1514,7 +1514,7 @@ static int init_hyp_mode(void)
 	 * Map the Hyp-code called directly from the host
 	 */
 	err = create_hyp_mappings(kvm_ksym_ref(__hyp_text_start),
-				  kvm_ksym_ref(__hyp_text_end), PAGE_HYP_EXEC);
+				  kvm_ksym_ref(__hyp_text_end), PAGE_HYP_EXEC); ==> Create virtual address maping for all hyp code section
 	if (err) {
 		kvm_err("Cannot map world-switch code\n");
 		goto out_err;

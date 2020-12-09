@@ -701,9 +701,9 @@ static int __create_hyp_mappings(pgd_t *pgdp, unsigned long ptrs_per_pgd,
 	addr = start & PAGE_MASK;
 	end = PAGE_ALIGN(end);
 	do {
-		pgd = pgdp + kvm_pgd_index(addr, ptrs_per_pgd);
+		pgd = pgdp + kvm_pgd_index(addr, ptrs_per_pgd); ==> Get pgd entry of addr (PGD=Page Global Directory)
 
-		if (pgd_none(*pgd)) {
+		if (pgd_none(*pgd)) { ==> pgd is not allocated yet
 			pud = pud_alloc_one(NULL, addr);
 			if (!pud) {
 				kvm_err("Cannot allocate Hyp pud\n");
@@ -711,10 +711,10 @@ static int __create_hyp_mappings(pgd_t *pgdp, unsigned long ptrs_per_pgd,
 				goto out;
 			}
 			kvm_pgd_populate(pgd, pud);
-			get_page(virt_to_page(pgd));
+			get_page(virt_to_page(pgd)); ==> lock page for pgd in memory
 		}
 
-		next = pgd_addr_end(addr, end);
+		next = pgd_addr_end(addr, end); ==> Get last address of current pgd entry?
 		err = create_hyp_pud_mappings(pgd, addr, next, pfn, prot);
 		if (err)
 			goto out;
@@ -762,10 +762,10 @@ int create_hyp_mappings(void *from, void *to, pgprot_t prot)
 	for (virt_addr = start; virt_addr < end; virt_addr += PAGE_SIZE) {
 		int err;
 
-		phys_addr = kvm_kaddr_to_phys(from + virt_addr - start);
+		phys_addr = kvm_kaddr_to_phys(from + virt_addr - start); ==> convert kernel virtual address to physical address
 		err = __create_hyp_mappings(hyp_pgd, PTRS_PER_PGD,
 					    virt_addr, virt_addr + PAGE_SIZE,
-					    __phys_to_pfn(phys_addr),
+					    __phys_to_pfn(phys_addr), ==> setup mapping table to convert virt_address for phyiscal address
 					    prot);
 		if (err)
 			return err;
@@ -2184,7 +2184,7 @@ int kvm_mmu_init(void)
 	hyp_idmap_start = ALIGN_DOWN(hyp_idmap_start, PAGE_SIZE);
 	hyp_idmap_end = kvm_virt_to_phys(__hyp_idmap_text_end);
 	hyp_idmap_end = ALIGN(hyp_idmap_end, PAGE_SIZE);
-	hyp_idmap_vector = kvm_virt_to_phys(__kvm_hyp_init);
+	hyp_idmap_vector = kvm_virt_to_phys(__kvm_hyp_init); ==> __kvm_hyp_init is defined in hyp-init.S in hyp.idmap.text section
 
 	/*
 	 * We rely on the linker script to ensure at build time that the HYP
@@ -2209,7 +2209,7 @@ int kvm_mmu_init(void)
 		goto out;
 	}
 
-	hyp_pgd = (pgd_t *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, hyp_pgd_order);
+	hyp_pgd = (pgd_t *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, hyp_pgd_order); ==> hyp_pgd_order number of entries of pgd
 	if (!hyp_pgd) {
 		kvm_err("Hyp mode PGD not allocated\n");
 		err = -ENOMEM;

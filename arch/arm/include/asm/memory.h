@@ -185,8 +185,8 @@ extern const void *__pv_table_begin, *__pv_table_end;
 
 #define __pv_stub(from,to,instr,type)			\
 	__asm__("@ __pv_stub\n"				\
-	"1:	" instr "	%0, %1, %2\n"		\
-	"	.pushsection .pv_table,\"a\"\n"		\
+	"1:	" instr "	%0, %1, %2\n"		\ ==> Add %1 (from) and %2 (type), put sum into %0 (to)
+	"	.pushsection .pv_table,\"a\"\n"		\ ==> See https://biscuitos.github.io/blog/ASM_pushsection/
 	"	.long	1b\n"				\
 	"	.popsection\n"				\
 	: "=r" (to)					\
@@ -203,8 +203,8 @@ extern const void *__pv_table_begin, *__pv_table_end;
 
 #define __pv_add_carry_stub(x, y)			\
 	__asm__ volatile("@ __pv_add_carry_stub\n"	\
-	"1:	adds	%Q0, %1, %2\n"			\
-	"	adc	%R0, %R0, #0\n"			\
+	"1:	adds	%Q0, %1, %2\n"			\  ==> adds: add with update status flag
+	"	adc	%R0, %R0, #0\n"			\  ==> adc: add with update carry flag
 	"	.pushsection .pv_table,\"a\"\n"		\
 	"	.long	1b\n"				\
 	"	.popsection\n"				\
@@ -217,7 +217,7 @@ static inline phys_addr_t __virt_to_phys_nodebug(unsigned long x)
 	phys_addr_t t;
 
 	if (sizeof(phys_addr_t) == 4) {
-		__pv_stub(x, t, "add", __PV_BITS_31_24);
+		__pv_stub(x, t, "add", __PV_BITS_31_24); ==> virtual address = physical address + __PV_BITS_31_24
 	} else {
 		__pv_stub_mov_hi(t);
 		__pv_add_carry_stub(x, t);

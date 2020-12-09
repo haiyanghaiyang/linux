@@ -406,10 +406,10 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 		phys_shift = KVM_PHYS_SHIFT;
 	}
 
-	parange = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1) & 7;
+	parange = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1) & 7; ==> Read CPU feature register of physical address range
 	if (parange > ID_AA64MMFR0_PARANGE_MAX)
 		parange = ID_AA64MMFR0_PARANGE_MAX;
-	vtcr |= parange << VTCR_EL2_PS_SHIFT;
+	vtcr |= parange << VTCR_EL2_PS_SHIFT; ==> VTCR_EL2_PS_SHIFT: Physical address shift (https://developer.arm.com/docs/ddi0595/h/aarch64-system-registers/vtcr_el2#Profile(A)PS_18)
 
 	vtcr |= VTCR_EL2_T0SZ(phys_shift);
 	/*
@@ -426,7 +426,7 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 	 * on all CPUs. The features is RES0 on CPUs without the support
 	 * and must be ignored by the CPUs.
 	 */
-	vtcr |= VTCR_EL2_HA;
+	vtcr |= VTCR_EL2_HA; ==> Hardware access flag (https://developer.arm.com/docs/ddi0595/h/aarch64-system-registers/vtcr_el2#Profile(A)HA_21)
 
 	/* Set the vmid bits */
 	vtcr |= (kvm_get_vmid_bits() == 16) ?

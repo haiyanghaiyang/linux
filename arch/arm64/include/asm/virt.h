@@ -80,7 +80,7 @@ static inline bool is_hyp_mode_mismatched(void)
 
 static inline bool is_kernel_in_hyp_mode(void)
 {
-	return read_sysreg(CurrentEL) == CurrentEL_EL2;
+	return read_sysreg(CurrentEL) == CurrentEL_EL2; ==> Whether current CPU is in EL2
 }
 
 static __always_inline bool has_vhe(void)

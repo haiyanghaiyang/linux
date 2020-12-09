@@ -673,7 +673,7 @@ void __weak kvm_arch_pre_destroy_vm(struct kvm *kvm)
 {
 }
 
-static struct kvm *kvm_create_vm(unsigned long type)
+static struct kvm *kvm_create_vm(unsigned long type) ==> For arm, type stands for number of bits in IPA address space
 {
 	struct kvm *kvm = kvm_arch_alloc_vm();
 	int r = -ENOMEM;
@@ -684,16 +684,16 @@ static struct kvm *kvm_create_vm(unsigned long type)
 
 	spin_lock_init(&kvm->mmu_lock);
 	mmgrab(current->mm);
-	kvm->mm = current->mm;
+	kvm->mm = current->mm; ==> copy current task memory mapping to vm
 	kvm_eventfd_init(kvm);
 	mutex_init(&kvm->lock);
 	mutex_init(&kvm->irq_lock);
 	mutex_init(&kvm->slots_lock);
-	INIT_LIST_HEAD(&kvm->devices);
+	INIT_LIST_HEAD(&kvm->devices); ==> device list of the vm
 
 	BUILD_BUG_ON(KVM_MEM_SLOTS_NUM > SHRT_MAX);
 
-	if (init_srcu_struct(&kvm->srcu))
+	if (init_srcu_struct(&kvm->srcu)) ==> initialize sleep rcu
 		goto out_err_no_srcu;
 	if (init_srcu_struct(&kvm->irq_srcu))
 		goto out_err_no_irq_srcu;
@@ -706,17 +706,17 @@ static struct kvm *kvm_create_vm(unsigned long type)
 			goto out_err_no_arch_destroy_vm;
 		/* Generations must be different for each address space. */
 		slots->generation = i;
-		rcu_assign_pointer(kvm->memslots[i], slots);
+		rcu_assign_pointer(kvm->memslots[i], slots); ==> allocate memroy slot space
 	}
 
 	for (i = 0; i < KVM_NR_BUSES; i++) {
 		rcu_assign_pointer(kvm->buses[i],
-			kzalloc(sizeof(struct kvm_io_bus), GFP_KERNEL_ACCOUNT));
+			kzalloc(sizeof(struct kvm_io_bus), GFP_KERNEL_ACCOUNT)); ==> Allocate io bus space
 		if (!kvm->buses[i])
 			goto out_err_no_arch_destroy_vm;
 	}
 
-	r = kvm_arch_init_vm(kvm, type);
+	r = kvm_arch_init_vm(kvm, type); ==> architecture specific vm init
 	if (r)
 		goto out_err_no_arch_destroy_vm;
 
@@ -737,7 +737,7 @@ static struct kvm *kvm_create_vm(unsigned long type)
 		goto out_err;
 
 	mutex_lock(&kvm_lock);
-	list_add(&kvm->vm_list, &vm_list);
+	list_add(&kvm->vm_list, &vm_list); ==> Add current kvm into global kvm list
 	mutex_unlock(&kvm_lock);
 
 	preempt_notifier_inc();
@@ -3698,12 +3698,12 @@ static void hardware_enable_nolock(void *junk)
 	int cpu = raw_smp_processor_id();
 	int r;
 
-	if (cpumask_test_cpu(cpu, cpus_hardware_enabled))
+	if (cpumask_test_cpu(cpu, cpus_hardware_enabled)) ==> Skip if it is already enabled
 		return;
 
 	cpumask_set_cpu(cpu, cpus_hardware_enabled);
 
-	r = kvm_arch_hardware_enable();
+	r = kvm_arch_hardware_enable(); ==> defined in architecture code
 
 	if (r) {
 		cpumask_clear_cpu(cpu, cpus_hardware_enabled);
@@ -3765,9 +3765,9 @@ static int hardware_enable_all(void)
 	kvm_usage_count++;
 	if (kvm_usage_count == 1) {
 		atomic_set(&hardware_enable_failed, 0);
-		on_each_cpu(hardware_enable_nolock, NULL, 1);
+		on_each_cpu(hardware_enable_nolock, NULL, 1); ==> Call hardware_enable_nolock on each CPU to enable hypervisor
 
-		if (atomic_read(&hardware_enable_failed)) {
+		if (atomic_read(&hardware_enable_failed)) { ==> Check whether it is successfully enabled
 			hardware_disable_all_nolock();
 			r = -EBUSY;
 		}

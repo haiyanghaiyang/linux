@@ -990,7 +990,7 @@ static inline bool is_pci_p2pdma_page(const struct page *page)
 #define page_ref_zero_or_close_to_overflow(page) \
 	((unsigned int) page_ref_count(page) + 127u <= 127u)
 
-static inline void get_page(struct page *page)
+static inline void get_page(struct page *page) ==> Increase reference count of the page to avoid it is released by kernel (http://liujunming.top/2017/07/03/Linux%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E5%86%85%E6%A0%B8%E5%87%BD%E6%95%B0/)
 {
 	page = compound_head(page);
 	/*
