@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-3-Clause)
 //
 // This file is provided under a dual BSD/GPLv2 license.  When using or
 // redistributing this file, you may do so under either license.
@@ -19,8 +19,8 @@ static void update_mute_led(struct snd_sof_control *scontrol,
 			    struct snd_kcontrol *kcontrol,
 			    struct snd_ctl_elem_value *ucontrol)
 {
-	unsigned int temp = 0;
-	unsigned int mask;
+	int temp = 0;
+	int mask;
 	int i;
 
 	mask = 1U << snd_ctl_get_ioffidx(kcontrol, &ucontrol->id);
@@ -298,6 +298,10 @@ int snd_sof_bytes_ext_put(struct snd_kcontrol *kcontrol,
 	const struct snd_ctl_tlv __user *tlvd =
 		(const struct snd_ctl_tlv __user *)binary_data;
 
+	/* make sure we have at least a header */
+	if (size < sizeof(struct snd_ctl_tlv))
+		return -EINVAL;
+
 	/*
 	 * The beginning of bytes data contains a header from where
 	 * the length (as bytes) is needed to know the correct copy
@@ -305,6 +309,13 @@ int snd_sof_bytes_ext_put(struct snd_kcontrol *kcontrol,
 	 */
 	if (copy_from_user(&header, tlvd, sizeof(const struct snd_ctl_tlv)))
 		return -EFAULT;
+
+	/* make sure TLV info is consistent */
+	if (header.length + sizeof(struct snd_ctl_tlv) > size) {
+		dev_err_ratelimited(scomp->dev, "error: inconsistent TLV, data %d + header %zu > %d\n",
+				    header.length, sizeof(struct snd_ctl_tlv), size);
+		return -EINVAL;
+	}
 
 	/* be->max is coming from topology */
 	if (header.length > be->max) {

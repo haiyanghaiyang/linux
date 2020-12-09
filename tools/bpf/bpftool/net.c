@@ -313,8 +313,8 @@ static int do_attach(int argc, char **argv)
 
 	ifindex = net_parse_dev(&argc, &argv);
 	if (ifindex < 1) {
-		close(progfd);
-		return -EINVAL;
+		err = -EINVAL;
+		goto cleanup;
 	}
 
 	if (argc) {
@@ -322,8 +322,8 @@ static int do_attach(int argc, char **argv)
 			overwrite = true;
 		} else {
 			p_err("expected 'overwrite', got: '%s'?", *argv);
-			close(progfd);
-			return -EINVAL;
+			err = -EINVAL;
+			goto cleanup;
 		}
 	}
 
@@ -331,17 +331,17 @@ static int do_attach(int argc, char **argv)
 	if (is_prefix("xdp", attach_type_strings[attach_type]))
 		err = do_attach_detach_xdp(progfd, attach_type, ifindex,
 					   overwrite);
-
-	if (err < 0) {
+	if (err) {
 		p_err("interface %s attach failed: %s",
 		      attach_type_strings[attach_type], strerror(-err));
-		return err;
+		goto cleanup;
 	}
 
 	if (json_output)
 		jsonw_null(json_wtr);
-
-	return 0;
+cleanup:
+	close(progfd);
+	return err;
 }
 
 static int do_detach(int argc, char **argv)
@@ -458,10 +458,10 @@ static int do_help(int argc, char **argv)
 	}
 
 	fprintf(stderr,
-		"Usage: %s %s { show | list } [dev <devname>]\n"
-		"       %s %s attach ATTACH_TYPE PROG dev <devname> [ overwrite ]\n"
-		"       %s %s detach ATTACH_TYPE dev <devname>\n"
-		"       %s %s help\n"
+		"Usage: %1$s %2$s { show | list } [dev <devname>]\n"
+		"       %1$s %2$s attach ATTACH_TYPE PROG dev <devname> [ overwrite ]\n"
+		"       %1$s %2$s detach ATTACH_TYPE dev <devname>\n"
+		"       %1$s %2$s help\n"
 		"\n"
 		"       " HELP_SPEC_PROGRAM "\n"
 		"       ATTACH_TYPE := { xdp | xdpgeneric | xdpdrv | xdpoffload }\n"
@@ -470,8 +470,8 @@ static int do_help(int argc, char **argv)
 		"      For progs attached to cgroups, use \"bpftool cgroup\"\n"
 		"      to dump program attachments. For program types\n"
 		"      sk_{filter,skb,msg,reuseport} and lwt/seg6, please\n"
-		"      consult iproute2.\n",
-		bin_name, argv[-2], bin_name, argv[-2], bin_name, argv[-2],
+		"      consult iproute2.\n"
+		"",
 		bin_name, argv[-2]);
 
 	return 0;

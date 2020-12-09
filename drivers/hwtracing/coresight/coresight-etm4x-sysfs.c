@@ -205,8 +205,8 @@ static ssize_t reset_store(struct device *dev,
 	 * started state. ARM recommends start-stop logic is set before
 	 * each trace run.
 	 */
-	config->vinst_ctrl |= BIT(0);
-	if (drvdata->nr_addr_cmp == true) {
+	config->vinst_ctrl = BIT(0);
+	if (drvdata->nr_addr_cmp > 0) {
 		config->mode |= ETM_MODE_VIEWINST_STARTSTOP;
 		/* SSSTATUS, bit[9] */
 		config->vinst_ctrl |= BIT(9);

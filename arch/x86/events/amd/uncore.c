@@ -180,6 +180,19 @@ static void amd_uncore_del(struct perf_event *event, int flags)
 	hwc->idx = -1;
 }
 
+/*
+ * Return a full thread and slice mask until per-CPU is
+ * properly supported.
+ */
+static u64 l3_thread_slice_mask(void)
+{
+	if (boot_cpu_data.x86 <= 0x18)
+		return AMD64_L3_SLICE_MASK | AMD64_L3_THREAD_MASK;
+
+	return AMD64_L3_EN_ALL_SLICES | AMD64_L3_EN_ALL_CORES |
+	       AMD64_L3_F19H_THREAD_MASK;
+}
+
 static int amd_uncore_event_init(struct perf_event *event)
 {
 	struct amd_uncore *uncore;
@@ -203,18 +216,11 @@ static int amd_uncore_event_init(struct perf_event *event)
 		return -EINVAL;
 
 	/*
-	 * SliceMask and ThreadMask need to be set for certain L3 events in
-	 * Family 17h. For other events, the two fields do not affect the count.
+	 * SliceMask and ThreadMask need to be set for certain L3 events.
+	 * For other events, the two fields do not affect the count.
 	 */
-	if (l3_mask && is_llc_event(event)) {
-		int thread = 2 * (cpu_data(event->cpu).cpu_core_id % 4);
-
-		if (smp_num_siblings > 1)
-			thread += cpu_data(event->cpu).apicid & 1;
-
-		hwc->config |= (1ULL << (AMD64_L3_THREAD_SHIFT + thread) &
-				AMD64_L3_THREAD_MASK) | AMD64_L3_SLICE_MASK;
-	}
+	if (l3_mask && is_llc_event(event))
+		hwc->config |= l3_thread_slice_mask();
 
 	uncore = event_to_amd_uncore(event);
 	if (!uncore)
@@ -520,9 +526,9 @@ static int __init amd_uncore_init(void)
 	if (!boot_cpu_has(X86_FEATURE_TOPOEXT))
 		return -ENODEV;
 
-	if (boot_cpu_data.x86 == 0x17 || boot_cpu_data.x86 == 0x18) {
+	if (boot_cpu_data.x86 >= 0x17) {
 		/*
-		 * For F17h or F18h, the Northbridge counters are
+		 * For F17h and above, the Northbridge counters are
 		 * repurposed as Data Fabric counters. Also, L3
 		 * counters are supported too. The PMUs are exported
 		 * based on family as either L2 or L3 and NB or DF.

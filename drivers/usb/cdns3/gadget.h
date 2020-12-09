@@ -1067,7 +1067,7 @@ struct cdns3_trb {
 #define TRB_TDL_SS_SIZE_GET(p)	(((p) & GENMASK(23, 17)) >> 17)
 
 /* transfer_len bitmasks - bits 31:24 */
-#define TRB_BURST_LEN(p)	(((p) << 24) & GENMASK(31, 24))
+#define TRB_BURST_LEN(p)	((unsigned int)((p) << 24) & GENMASK(31, 24))
 #define TRB_BURST_LEN_GET(p)	(((p) & GENMASK(31, 24)) >> 24)
 
 /* Data buffer pointer bitmasks*/
@@ -1154,6 +1154,7 @@ struct cdns3_endpoint {
 #define EP_QUIRK_EXTRA_BUF_DET	BIT(12)
 #define EP_QUIRK_EXTRA_BUF_EN	BIT(13)
 #define EP_TDLCHK_EN		BIT(15)
+#define EP_CONFIGURED		BIT(16)
 	u32			flags;
 
 	struct cdns3_request	*descmis_req;
@@ -1199,7 +1200,7 @@ struct cdns3_aligned_buf {
 	void			*buf;
 	dma_addr_t		dma;
 	u32			size;
-	int			in_use:1;
+	unsigned		in_use:1;
 	struct list_head	list;
 };
 
@@ -1308,8 +1309,8 @@ struct cdns3_device {
 	unsigned			u2_allowed:1;
 	unsigned			is_selfpowered:1;
 	unsigned			setup_pending:1;
-	int				hw_configured_flag:1;
-	int				wake_up_flag:1;
+	unsigned			hw_configured_flag:1;
+	unsigned			wake_up_flag:1;
 	unsigned			status_completion_no_call:1;
 	unsigned			using_streams:1;
 	int				out_mem_is_allocated;
@@ -1351,7 +1352,7 @@ void cdns3_gadget_giveback(struct cdns3_endpoint *priv_ep,
 int cdns3_init_ep0(struct cdns3_device *priv_dev,
 		   struct cdns3_endpoint *priv_ep);
 void cdns3_ep0_config(struct cdns3_device *priv_dev);
-void cdns3_ep_config(struct cdns3_endpoint *priv_ep);
+int cdns3_ep_config(struct cdns3_endpoint *priv_ep, bool enable);
 void cdns3_check_ep0_interrupt_proceed(struct cdns3_device *priv_dev, int dir);
 int __cdns3_gadget_wakeup(struct cdns3_device *priv_dev);
 

@@ -34,9 +34,6 @@ MODULE_DESCRIPTION("s390 protected key interface");
 #define KEYBLOBBUFSIZE 8192  /* key buffer size used for internal processing */
 #define MAXAPQNSINLIST 64    /* max 64 apqns within a apqn list */
 
-/* mask of available pckmo subfunctions, fetched once at module init */
-static cpacf_mask_t pckmo_functions;
-
 /*
  * debug feature data and functions
  */
@@ -80,7 +77,7 @@ struct clearaeskeytoken {
 	u8  res1[3];
 	u32 keytype;	 /* key type, one of the PKEY_KEYTYPE values */
 	u32 len;	 /* bytes actually stored in clearkey[] */
-	u8  clearkey[0]; /* clear key value */
+	u8  clearkey[]; /* clear key value */
 } __packed;
 
 /*
@@ -90,6 +87,9 @@ static int pkey_clr2protkey(u32 keytype,
 			    const struct pkey_clrkey *clrkey,
 			    struct pkey_protkey *protkey)
 {
+	/* mask of available pckmo subfunctions */
+	static cpacf_mask_t pckmo_functions;
+
 	long fc;
 	int keysize;
 	u8 paramblock[64];
@@ -113,11 +113,13 @@ static int pkey_clr2protkey(u32 keytype,
 		return -EINVAL;
 	}
 
-	/*
-	 * Check if the needed pckmo subfunction is available.
-	 * These subfunctions can be enabled/disabled by customers
-	 * in the LPAR profile or may even change on the fly.
-	 */
+	/* Did we already check for PCKMO ? */
+	if (!pckmo_functions.bytes[0]) {
+		/* no, so check now */
+		if (!cpacf_query(CPACF_PCKMO, &pckmo_functions))
+			return -ENODEV;
+	}
+	/* check for the pckmo subfunction we need now */
 	if (!cpacf_test_func(&pckmo_functions, fc)) {
 		DEBUG_ERR("%s pckmo functions not available\n", __func__);
 		return -ENODEV;
@@ -818,7 +820,7 @@ static int pkey_keyblob2pkey2(const struct pkey_apqn *apqns, size_t nr_apqns,
 static int pkey_apqns4key(const u8 *key, size_t keylen, u32 flags,
 			  struct pkey_apqn *apqns, size_t *nr_apqns)
 {
-	int rc = EINVAL;
+	int rc;
 	u32 _nr_apqns, *_apqns = NULL;
 	struct keytoken_header *hdr = (struct keytoken_header *)key;
 
@@ -886,7 +888,7 @@ static int pkey_apqns4keytype(enum pkey_key_type ktype,
 			      u8 cur_mkvp[32], u8 alt_mkvp[32], u32 flags,
 			      struct pkey_apqn *apqns, size_t *nr_apqns)
 {
-	int rc = -EINVAL;
+	int rc;
 	u32 _nr_apqns, *_apqns = NULL;
 
 	if (ktype == PKEY_TYPE_CCA_DATA || ktype == PKEY_TYPE_CCA_CIPHER) {
@@ -1603,8 +1605,8 @@ static ssize_t pkey_ccacipher_aes_attr_read(enum pkey_key_size keybits,
 		if (rc == 0)
 			break;
 	}
-		if (rc)
-			return rc;
+	if (rc)
+		return rc;
 
 	if (is_xts) {
 		keysize = CCACIPHERTOKENSIZE;
@@ -1838,7 +1840,7 @@ static struct miscdevice pkey_dev = {
  */
 static int __init pkey_init(void)
 {
-	cpacf_mask_t kmc_functions;
+	cpacf_mask_t func_mask;
 
 	/*
 	 * The pckmo instruction should be available - even if we don't
@@ -1846,15 +1848,15 @@ static int __init pkey_init(void)
 	 * is also the minimum level for the kmc instructions which
 	 * are able to work with protected keys.
 	 */
-	if (!cpacf_query(CPACF_PCKMO, &pckmo_functions))
+	if (!cpacf_query(CPACF_PCKMO, &func_mask))
 		return -ENODEV;
 
 	/* check for kmc instructions available */
-	if (!cpacf_query(CPACF_KMC, &kmc_functions))
+	if (!cpacf_query(CPACF_KMC, &func_mask))
 		return -ENODEV;
-	if (!cpacf_test_func(&kmc_functions, CPACF_KMC_PAES_128) ||
-	    !cpacf_test_func(&kmc_functions, CPACF_KMC_PAES_192) ||
-	    !cpacf_test_func(&kmc_functions, CPACF_KMC_PAES_256))
+	if (!cpacf_test_func(&func_mask, CPACF_KMC_PAES_128) ||
+	    !cpacf_test_func(&func_mask, CPACF_KMC_PAES_192) ||
+	    !cpacf_test_func(&func_mask, CPACF_KMC_PAES_256))
 		return -ENODEV;
 
 	pkey_debug_init();

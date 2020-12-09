@@ -174,12 +174,17 @@ MODULE_PARM_DESC(tx_timeout, "The Tx timeout in ms");
 #define DPAA_PARSE_RESULTS_SIZE sizeof(struct fman_prs_result)
 #define DPAA_TIME_STAMP_SIZE 8
 #define DPAA_HASH_RESULTS_SIZE 8
-#ifdef CONFIG_DPAA_ERRATUM_A050385
-#define DPAA_RX_PRIV_DATA_SIZE (DPAA_A050385_ALIGN - (DPAA_PARSE_RESULTS_SIZE\
-	 + DPAA_TIME_STAMP_SIZE + DPAA_HASH_RESULTS_SIZE))
-#else
-#define DPAA_RX_PRIV_DATA_SIZE	(u16)(DPAA_TX_PRIV_DATA_SIZE + \
+#define DPAA_HWA_SIZE (DPAA_PARSE_RESULTS_SIZE + DPAA_TIME_STAMP_SIZE \
+		       + DPAA_HASH_RESULTS_SIZE)
+#define DPAA_RX_PRIV_DATA_DEFAULT_SIZE (DPAA_TX_PRIV_DATA_SIZE + \
 					dpaa_rx_extra_headroom)
+#ifdef CONFIG_DPAA_ERRATUM_A050385
+#define DPAA_RX_PRIV_DATA_A050385_SIZE (DPAA_A050385_ALIGN - DPAA_HWA_SIZE)
+#define DPAA_RX_PRIV_DATA_SIZE (fman_has_errata_a050385() ? \
+				DPAA_RX_PRIV_DATA_A050385_SIZE : \
+				DPAA_RX_PRIV_DATA_DEFAULT_SIZE)
+#else
+#define DPAA_RX_PRIV_DATA_SIZE DPAA_RX_PRIV_DATA_DEFAULT_SIZE
 #endif
 
 #define DPAA_ETH_PCD_RXQ_NUM	128
@@ -259,8 +264,20 @@ static int dpaa_netdev_init(struct net_device *net_dev,
 	net_dev->features |= net_dev->hw_features;
 	net_dev->vlan_features = net_dev->features;
 
-	memcpy(net_dev->perm_addr, mac_addr, net_dev->addr_len);
-	memcpy(net_dev->dev_addr, mac_addr, net_dev->addr_len);
+	if (is_valid_ether_addr(mac_addr)) {
+		memcpy(net_dev->perm_addr, mac_addr, net_dev->addr_len);
+		memcpy(net_dev->dev_addr, mac_addr, net_dev->addr_len);
+	} else {
+		eth_hw_addr_random(net_dev);
+		err = priv->mac_dev->change_addr(priv->mac_dev->fman_mac,
+			(enet_addr_t *)net_dev->dev_addr);
+		if (err) {
+			dev_err(dev, "Failed to set random MAC address\n");
+			return -EINVAL;
+		}
+		dev_info(dev, "Using random MAC address: %pM\n",
+			 net_dev->dev_addr);
+	}
 
 	net_dev->ethtool_ops = &dpaa_ethtool_ops;
 
@@ -933,7 +950,7 @@ static void dpaa_fq_setup(struct dpaa_priv *priv,
 			break;
 		case FQ_TYPE_TX_CONF_MQ:
 			priv->conf_fqs[conf_cnt++] = &fq->fq_base;
-			/* fall through */
+			fallthrough;
 		case FQ_TYPE_TX_CONFIRM:
 			dpaa_setup_ingress(priv, fq, &fq_cbs->tx_defq);
 			break;
@@ -2050,7 +2067,7 @@ static inline int dpaa_xmit(struct dpaa_priv *priv,
 }
 
 #ifdef CONFIG_DPAA_ERRATUM_A050385
-int dpaa_a050385_wa(struct net_device *net_dev, struct sk_buff **s)
+static int dpaa_a050385_wa(struct net_device *net_dev, struct sk_buff **s)
 {
 	struct dpaa_priv *priv = netdev_priv(net_dev);
 	struct sk_buff *new_skb, *skb = *s;
@@ -2095,7 +2112,7 @@ workaround:
 
 	/* Workaround for DPAA_A050385 requires data start to be aligned */
 	start = PTR_ALIGN(new_skb->data, DPAA_A050385_ALIGN);
-	if (start - new_skb->data != 0)
+	if (start - new_skb->data)
 		skb_reserve(new_skb, start - new_skb->data);
 
 	skb_put(new_skb, skb->len);
@@ -2828,7 +2845,8 @@ out_error:
 	return err;
 }
 
-static inline u16 dpaa_get_headroom(struct dpaa_buffer_layout *bl)
+static u16 dpaa_get_headroom(struct dpaa_buffer_layout *bl,
+			     enum port_type port)
 {
 	u16 headroom;
 
@@ -2842,10 +2860,12 @@ static inline u16 dpaa_get_headroom(struct dpaa_buffer_layout *bl)
 	 *
 	 * Also make sure the headroom is a multiple of data_align bytes
 	 */
-	headroom = (u16)(bl->priv_data_size + DPAA_PARSE_RESULTS_SIZE +
-		DPAA_TIME_STAMP_SIZE + DPAA_HASH_RESULTS_SIZE);
+	headroom = (u16)(bl[port].priv_data_size + DPAA_HWA_SIZE);
 
-	return ALIGN(headroom, DPAA_FD_DATA_ALIGNMENT);
+	if (port == RX)
+		return ALIGN(headroom, DPAA_FD_RX_DATA_ALIGNMENT);
+	else
+		return ALIGN(headroom, DPAA_FD_DATA_ALIGNMENT);
 }
 
 static int dpaa_eth_probe(struct platform_device *pdev)
@@ -2902,7 +2922,7 @@ static int dpaa_eth_probe(struct platform_device *pdev)
 	}
 
 	/* Do this here, so we can be verbose early */
-	SET_NETDEV_DEV(net_dev, dev);
+	SET_NETDEV_DEV(net_dev, dev->parent);
 	dev_set_drvdata(dev, net_dev);
 
 	priv = netdev_priv(net_dev);
@@ -2926,7 +2946,7 @@ static int dpaa_eth_probe(struct platform_device *pdev)
 						   DMA_BIT_MASK(40));
 	if (err) {
 		netdev_err(net_dev, "dma_coerce_mask_and_coherent() failed\n");
-		return err;
+		goto free_netdev;
 	}
 
 	/* If fsl_fm_max_frm is set to a higher value than the all-common 1500,
@@ -3013,8 +3033,8 @@ static int dpaa_eth_probe(struct platform_device *pdev)
 			goto free_dpaa_fqs;
 	}
 
-	priv->tx_headroom = dpaa_get_headroom(&priv->buf_layout[TX]);
-	priv->rx_headroom = dpaa_get_headroom(&priv->buf_layout[RX]);
+	priv->tx_headroom = dpaa_get_headroom(priv->buf_layout, TX);
+	priv->rx_headroom = dpaa_get_headroom(priv->buf_layout, RX);
 
 	/* All real interfaces need their ports initialized */
 	err = dpaa_eth_init_ports(mac_dev, dpaa_bp, &port_fqs,

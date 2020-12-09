@@ -190,9 +190,6 @@ static struct drm_driver vc4_drm_driver = {
 	.irq_postinstall = vc4_irq_postinstall,
 	.irq_uninstall = vc4_irq_uninstall,
 
-	.get_scanout_position = vc4_crtc_get_scanoutpos,
-	.get_vblank_timestamp = drm_calc_vbltimestamp_from_scanoutpos,
-
 #if defined(CONFIG_DEBUG_FS)
 	.debugfs_init = vc4_debugfs_init,
 #endif
@@ -291,6 +288,10 @@ static int vc4_drm_bind(struct device *dev)
 	if (ret)
 		goto gem_destroy;
 
+	ret = vc4_plane_create_additional_planes(drm);
+	if (ret)
+		goto unbind_all;
+
 	drm_fb_helper_remove_conflicting_framebuffers(NULL, "vc4drmfb", false);
 
 	ret = vc4_kms_load(drm);
@@ -309,7 +310,7 @@ unbind_all:
 	component_unbind_all(dev, drm);
 gem_destroy:
 	vc4_gem_destroy(drm);
-	vc4_bo_cache_destroy(drm);
+	drm_mode_config_cleanup(drm);
 dev_put:
 	drm_dev_put(drm);
 	return ret;
@@ -342,8 +343,8 @@ static struct platform_driver *const component_drivers[] = {
 	&vc4_vec_driver,
 	&vc4_dpi_driver,
 	&vc4_dsi_driver,
-	&vc4_txp_driver,
 	&vc4_hvs_driver,
+	&vc4_txp_driver,
 	&vc4_crtc_driver,
 	&vc4_v3d_driver,
 };
