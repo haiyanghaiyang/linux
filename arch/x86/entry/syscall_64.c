@@ -17,11 +17,12 @@
 
 #define __SYSCALL_64(nr, sym) [nr] = __x64_##sym,
 
+==> asmlinkage: force to pass parameter via stack
 asmlinkage const sys_call_ptr_t sys_call_table[__NR_syscall_max+1] = {
 	/*
 	 * Smells like a compiler bug -- it doesn't work
 	 * when the & below is removed.
 	 */
-	[0 ... __NR_syscall_max] = &__x64_sys_ni_syscall,
+	[0 ... __NR_syscall_max] = &__x64_sys_ni_syscall, ==> Initialize default system call to return -ENOSYS
 #include <asm/syscalls_64.h>
 };

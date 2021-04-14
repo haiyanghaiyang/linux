@@ -12,6 +12,8 @@
 #include <linux/bits.h>
 #include <linux/stringify.h>
 
+==> ARM64 register definition can be found here: https://developer.arm.com/docs/ddi0601/f/aarch64-system-register
+
 /*
  * ARMv8 ARM reserves the following encoding for system registers:
  * (Ref: ARMv8 ARM, Section: "System instruction class encoding overview",

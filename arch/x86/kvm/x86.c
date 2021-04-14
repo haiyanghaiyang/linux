@@ -7494,6 +7494,7 @@ int kvm_arch_init(void *opaque)
 	}
 
 	if (!ops->cpu_has_kvm_support()) {
+        ==> Check with cpu has VT supported by cpuid instruction
 		pr_err_ratelimited("kvm: no hardware support\n");
 		r = -EOPNOTSUPP;
 		goto out;

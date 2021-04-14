@@ -31,6 +31,7 @@
 #ifdef CONFIG_HAVE_KVM_IRQFD
 
 static struct workqueue_struct *irqfd_cleanup_wq;
+==> When deactiving irqfd, we have to put the request in wait queue, wait for previous request done.
 
 bool __attribute__((weak))
 kvm_arch_irqfd_allowed(struct kvm *kvm, struct kvm_irqfd *args)

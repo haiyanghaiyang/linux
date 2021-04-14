@@ -4763,6 +4763,7 @@ static void check_processor_compat(void *data)
 
 int kvm_init(void *opaque, unsigned vcpu_size, unsigned vcpu_align,
 		  struct module *module)
+==> *opaque is architecture dependent data
 {
 	struct kvm_cpu_compat_check c;
 	int r;
