@@ -121,9 +121,11 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 
 	cortex_a76_erratum_1463225_svc_handler();
 	local_daif_restore(DAIF_PROCCTX);
-	user_exit();
+	user_exit(); ==> Just for tracing user mode exit
 
-	if (has_syscall_work(flags)) {
+	if (has_syscall_work(flags)) { ==> What does this flag mean
+                ==> TODO: Check why skip system call. Something is related to sigreturn system call
+
 		/*
 		 * The de-facto standard way to skip a system call using ptrace
 		 * is to set the system call to -1 (NO_SYSCALL) and set x0 to a
@@ -146,6 +148,7 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 			goto trace_exit;
 	}
 
+	==> Run syscall function
 	invoke_syscall(regs, scno, sc_nr, syscall_table);
 
 	/*

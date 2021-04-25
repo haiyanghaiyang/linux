@@ -100,6 +100,7 @@ static inline unsigned long long notrace __rdmsr(unsigned int msr)
 	return EAX_EDX_VAL(val, low, high);
 }
 
+==> Writes the contents of registers EDX:EAX into the 64-bit model specific register (MSR) specified in the ECX register.
 static inline void notrace __wrmsr(unsigned int msr, u32 low, u32 high)
 {
 	asm volatile("1: wrmsr\n"

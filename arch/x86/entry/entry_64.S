@@ -95,11 +95,11 @@ SYM_CODE_END(native_usergs_sysret64)
 SYM_CODE_START(entry_SYSCALL_64)
 	UNWIND_HINT_EMPTY
 
-	swapgs
+	swapgs ==> Swap gs base address register from user space to kernel space
 	/* tss.sp2 is scratch space. */
-	movq	%rsp, PER_CPU_VAR(cpu_tss_rw + TSS_sp2)
-	SWITCH_TO_KERNEL_CR3 scratch_reg=%rsp
-	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp
+	movq	%rsp, PER_CPU_VAR(cpu_tss_rw + TSS_sp2) ==> Save user mode stack
+	SWITCH_TO_KERNEL_CR3 scratch_reg=%rsp ==> Switch to kernel CR3 with PTI mask cleared.
+	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp ==> Restore kernel mode stack
 
 	/* Construct struct pt_regs on stack */
 	pushq	$__USER_DS				/* pt_regs->ss */
@@ -110,7 +110,7 @@ SYM_CODE_START(entry_SYSCALL_64)
 SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
 	pushq	%rax					/* pt_regs->orig_ax */
 
-	PUSH_AND_CLEAR_REGS rax=$-ENOSYS
+	PUSH_AND_CLEAR_REGS rax=$-ENOSYS ==> Why clear all registers?
 
 	/* IRQs are off. */
 	movq	%rax, %rdi
@@ -123,11 +123,12 @@ SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
 	 * go to the slow exit path.
 	 */
 	movq	RCX(%rsp), %rcx
-	movq	RIP(%rsp), %r11
+	movq	RIP(%rsp), %r11 ==> Fetch rip in pt_regs on stack
 
 	cmpq	%rcx, %r11	/* SYSRET requires RCX == RIP */
 	jne	swapgs_restore_regs_and_return_to_usermode
 
+        ==> processor 会对软件上的非 canonical-address 地址形式进行检查，程序中使用了非 canonical-address 会产生 #GP 异常。
 	/*
 	 * On Intel CPUs, SYSRET with non-canonical RCX/RIP will #GP
 	 * in kernel space.  This essentially lets the user take over
@@ -146,6 +147,8 @@ SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
 	shl	$(64 - (__VIRTUAL_MASK_SHIFT+1)), %rcx
 	sar	$(64 - (__VIRTUAL_MASK_SHIFT+1)), %rcx
 #endif
+
+        ==> canonical-address 地址形式就是：64 位的 linear address（virtual address）中的从 MSB（Most Significant Bit）最高有效位到第 63 位全是 0 或 1 的这种形式。
 
 	/* If this changed %rcx, it was not canonical */
 	cmpq	%rcx, %r11
@@ -213,7 +216,7 @@ syscall_return_via_sysret:
 
 	popq	%rdi
 	popq	%rsp
-	USERGS_SYSRET64
+	USERGS_SYSRET64 ==> Switch gs base address and call sysretq to return to user mode
 SYM_CODE_END(entry_SYSCALL_64)
 
 /*
@@ -348,10 +351,14 @@ SYM_CODE_END(ret_from_fork)
  */
 .macro idtentry vector asmsym cfunc has_error_code:req
 SYM_CODE_START(\asmsym)
+	==> Print stack usage hint for ORC (Oops Rewind Capability) and will be checked by objtool for stack validation.
+	==> ORC introduction: https://lwn.net/Articles/728339/
 	UNWIND_HINT_IRET_REGS offset=\has_error_code*8
 	ASM_CLAC
 
 	.if \has_error_code == 0
+ 		==> Push -1 on stack if no hardware error code
+		==> 但这不仅仅是一个”伪造”的错误代码，-1还会代表无效的系统调用号，因此这不会触发系统调用的重新启动逻辑。
 		pushq	$-1			/* ORIG_RAX: no syscall to restart */
 	.endif
 
@@ -360,6 +367,7 @@ SYM_CODE_START(\asmsym)
 		 * If coming from kernel space, create a 6-word gap to allow the
 		 * int3 handler to emulate a call instruction.
 		 */
+		==> The ORIG_RAX was just pushed. Caculate offset of CS, with adjusted offset. Then the value is CS register. Get CPL and it is kernel mode if CPL & 3 is not zero.
 		testb	$3, CS-ORIG_RAX(%rsp)
 		jnz	.Lfrom_usermode_no_gap_\@
 		.rept	6
@@ -526,7 +534,7 @@ SYM_INNER_LABEL(swapgs_restore_regs_and_return_to_usermode, SYM_L_GLOBAL)
 	/* Restore RDI. */
 	popq	%rdi
 	SWAPGS
-	INTERRUPT_RETURN
+	INTERRUPT_RETURN ==> jump native_iret
 
 
 SYM_INNER_LABEL(restore_regs_and_return_to_kernel, SYM_L_GLOBAL)
@@ -806,7 +814,7 @@ SYM_CODE_END(xen_failsafe_callback)
  */
 SYM_CODE_START_LOCAL(paranoid_entry)
 	UNWIND_HINT_FUNC
-	cld
+	cld ==> This makes sure DF flag is 0 and memory copy from low offset to high offset
 	PUSH_AND_CLEAR_REGS save_ret=1
 	ENCODE_FRAME_POINTER 8
 
@@ -930,11 +938,16 @@ SYM_CODE_END(paranoid_exit)
 SYM_CODE_START_LOCAL(error_entry)
 	UNWIND_HINT_FUNC
 	cld
+	==> Push and clear all register, and put return address on top of irq stack
 	PUSH_AND_CLEAR_REGS save_ret=1
-	ENCODE_FRAME_POINTER 8
-	testb	$3, CS+8(%rsp)
+	ENCODE_FRAME_POINTER 8 ==> TODO: Work for unwinder.
+	==> Check RPL of caller CS register to see if it is kernel spac3 (RPL=0) or user space (RPL is not 0)
+	==> Jump to error handling if it is called from kernel space.
+	==> https://www.cs.cmu.edu/~410/doc/segments/segments.html
+	testb	$3, CS+8(%rsp) ==> Because save_ret=1, the return address is pushed on stack. Need add offset 8.
 	jz	.Lerror_kernelspace
 
+	==> enter from user space
 	/*
 	 * We entered from user mode or we're pretending to have entered
 	 * from user mode due to an IRET fault.
@@ -966,11 +979,12 @@ SYM_CODE_START_LOCAL(error_entry)
 	 * for these here too.
 	 */
 .Lerror_kernelspace:
-	leaq	native_irq_return_iret(%rip), %rcx
+	==> Explanation of lea instruction: https://stackoverflow.com/questions/1658294/whats-the-purpose-of-the-lea-instruction
+	leaq	native_irq_return_iret(%rip), %rcx ==> rip is instruction to be executed. It is also used as base of PC-relative addressing for global data. Compiler and linker could find address of the symbol with rip.
 	cmpq	%rcx, RIP+8(%rsp)
-	je	.Lerror_bad_iret
+	je	.Lerror_bad_iret ==> Jump to this place if return address is native_irq_return_iret
 	movl	%ecx, %eax			/* zero extend */
-	cmpq	%rax, RIP+8(%rsp)
+	cmpq	%rax, RIP+8(%rsp) ==> The low part return address (%ecx) is native_irq_return_iret
 	je	.Lbstep_iret
 	cmpq	$.Lgs_change, RIP+8(%rsp)
 	jne	.Lerror_entry_done_lfence
@@ -1003,7 +1017,7 @@ SYM_CODE_START_LOCAL(error_entry)
 	 * as if we faulted immediately after IRET.
 	 */
 	mov	%rsp, %rdi
-	call	fixup_bad_iret
+	call	fixup_bad_iret ==> The parameter is from stack, which currently is return address plus pt_regs strcuture
 	mov	%rax, %rsp
 	jmp	.Lerror_entry_from_usermode_after_swapgs
 SYM_CODE_END(error_entry)

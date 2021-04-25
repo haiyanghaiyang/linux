@@ -477,7 +477,7 @@ alternative_endif
 	.pushsection ".entry.text", "ax"
 
 	.align	11
-SYM_CODE_START(vectors)
+SYM_CODE_START(vectors) ==> This is loaded into vbar_el1 by __primary_switched from _head
 	kernel_ventry	1, sync_invalid			// Synchronous EL1t
 	kernel_ventry	1, irq_invalid			// IRQ EL1t
 	kernel_ventry	1, fiq_invalid			// FIQ EL1t
@@ -488,7 +488,7 @@ SYM_CODE_START(vectors)
 	kernel_ventry	1, fiq_invalid			// FIQ EL1h
 	kernel_ventry	1, error			// Error EL1h
 
-	kernel_ventry	0, sync				// Synchronous 64-bit EL0
+	kernel_ventry	0, sync				// Synchronous 64-bit EL0 ==> el0_sync for system call
 	kernel_ventry	0, irq				// IRQ 64-bit EL0
 	kernel_ventry	0, fiq_invalid			// FIQ 64-bit EL0
 	kernel_ventry	0, error			// Error 64-bit EL0

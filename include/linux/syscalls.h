@@ -112,6 +112,9 @@ struct open_how;
 #define __MAP6(m,t,a,...) m(t,a), __MAP5(m,__VA_ARGS__)
 #define __MAP(n,...) __MAP##n(__VA_ARGS__)
 
+==> For each parameter, it has type "t" and argument "a".
+==> This macro just make sure syscall has provided correct pair
+==> of type and argument list.
 #define __SC_DECL(t, a)	t a
 #define __TYPE_AS(t, v)	__same_type((__force t)0, v)
 #define __TYPE_IS_L(t)	(__TYPE_AS(t, 0L))
@@ -163,6 +166,7 @@ extern struct trace_event_functions exit_syscall_print_funcs;
 	  __attribute__((section("_ftrace_events")))			\
 	*__event_exit_##sname = &event_exit_##sname;
 
+==> For syscall tracing
 #define SYSCALL_METADATA(sname, nb, ...)			\
 	static const char *types_##sname[] = {			\
 		__MAP(nb,__SC_STR_TDECL,__VA_ARGS__)		\
@@ -210,6 +214,7 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
 	asmlinkage long sys_##sname(void)
 #endif /* SYSCALL_DEFINE0 */
 
+==> sys_xxx sys call function
 #define SYSCALL_DEFINE1(name, ...) SYSCALL_DEFINEx(1, _##name, __VA_ARGS__)
 #define SYSCALL_DEFINE2(name, ...) SYSCALL_DEFINEx(2, _##name, __VA_ARGS__)
 #define SYSCALL_DEFINE3(name, ...) SYSCALL_DEFINEx(3, _##name, __VA_ARGS__)
@@ -235,6 +240,7 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
 	__diag_push();							\
 	__diag_ignore(GCC, 8, "-Wattribute-alias",			\
 		      "Type aliasing is used to sanitize syscall arguments");\
+        ==> This is the real syscall function
 	asmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))	\
 		__attribute__((alias(__stringify(__se_sys##name))));	\
 	ALLOW_ERROR_INJECTION(sys##name, ERRNO);			\
@@ -244,11 +250,13 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
 	{								\
 		long ret = __do_sys##name(__MAP(x,__SC_CAST,__VA_ARGS__));\
 		__MAP(x,__SC_TEST,__VA_ARGS__);				\
+                ==> __PROTECT is only defined in m68k
 		__PROTECT(x, ret,__MAP(x,__SC_ARGS,__VA_ARGS__));	\
 		return ret;						\
 	}								\
 	__diag_pop();							\
 	static inline long __do_sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))
+        ==> Implementation starts from here in each syscall driver code
 #endif /* __SYSCALL_DEFINEx */
 
 /*

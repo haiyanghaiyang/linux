@@ -41,13 +41,16 @@ static int map_irq_stack(unsigned int cpu)
 	for (i = 0; i < IRQ_STACK_SIZE / PAGE_SIZE; i++) {
 		phys_addr_t pa = per_cpu_ptr_to_phys(stack + (i << PAGE_SHIFT));
 
+		==> Get physical page addresses for the stack
 		pages[i] = pfn_to_page(pa >> PAGE_SHIFT);
 	}
 
+	==> Map stack address into virtual address
 	va = vmap(pages, IRQ_STACK_SIZE / PAGE_SIZE, VM_MAP, PAGE_KERNEL);
 	if (!va)
 		return -ENOMEM;
 
+	==> Set hardirq_stack_ptr as top of the stack in virtual address
 	per_cpu(hardirq_stack_ptr, cpu) = va + IRQ_STACK_SIZE;
 	return 0;
 }
@@ -67,7 +70,7 @@ static int map_irq_stack(unsigned int cpu)
 
 int irq_init_percpu_irqstack(unsigned int cpu)
 {
-	if (per_cpu(hardirq_stack_ptr, cpu))
+	if (per_cpu(hardirq_stack_ptr, cpu)) ==> return if it is already initialized
 		return 0;
 	return map_irq_stack(cpu);
 }
