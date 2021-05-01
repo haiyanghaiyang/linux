@@ -191,6 +191,13 @@ For 32-bit we have the following conventions - kernel is built with
 	bts	$X86_CR3_PCID_NOFLUSH_BIT, \reg
 .endm
 
+==> See this for PTI: https://blog.csdn.net/jus3ve/article/details/79544927
+==> Two issues to be handled between kernel and user space switch
+==> First is the set/clear of bit 13, which is 8KB offset between
+==> adjcent kernel and user space PGD.
+==> Second is whether flush TLB which related to performance and security.
+
+==> Setup NOFLUSH bit, and clear USER PCID and USER PAGE TABLE bit
 .macro ADJUST_KERNEL_CR3 reg:req
 	ALTERNATIVE "", "SET_NOFLUSH_BIT \reg", X86_FEATURE_PCID
 	/* Clear PCID and "PAGE_TABLE_ISOLATION bit", point CR3 at kernel pagetables: */
@@ -198,7 +205,7 @@ For 32-bit we have the following conventions - kernel is built with
 .endm
 
 .macro SWITCH_TO_KERNEL_CR3 scratch_reg:req
-	ALTERNATIVE "jmp .Lend_\@", "", X86_FEATURE_PTI
+	ALTERNATIVE "jmp .Lend_\@", "", X86_FEATURE_PTI ==> Kernel Page Table Isolation feature. If it is not supported, just jump to "Lend_\@".
 	mov	%cr3, \scratch_reg
 	ADJUST_KERNEL_CR3 \scratch_reg
 	mov	\scratch_reg, %cr3
@@ -219,6 +226,7 @@ For 32-bit we have the following conventions - kernel is built with
 	 */
 	movq	\scratch_reg, \scratch_reg2
 	andq	$(0x7FF), \scratch_reg		/* mask ASID */
+	==> TLB_STATE_user_pcid_flush_mask is per cpu variable set by invalidate_user_asid() to invalidate tlb
 	bt	\scratch_reg, THIS_CPU_user_pcid_flush_mask
 	jnc	.Lnoflush_\@
 
@@ -343,9 +351,9 @@ For 32-bit we have the following conventions - kernel is built with
 .endm
 
 .macro SAVE_AND_SET_GSBASE scratch_reg:req save_reg:req
-	rdgsbase \save_reg
-	GET_PERCPU_BASE \scratch_reg
-	wrgsbase \scratch_reg
+	rdgsbase \save_reg ==> read gsbase register into save_reg
+	GET_PERCPU_BASE \scratch_reg ==> Get percpu base (kernel gsbase) and save in \scratch_reg
+	wrgsbase \scratch_reg ==> Write kernel gsbase into gsbase register
 .endm
 
 #else /* CONFIG_X86_64 */

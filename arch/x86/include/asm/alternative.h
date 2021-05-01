@@ -154,6 +154,11 @@ static inline int alternatives_text_reserved(void *start, void *end)
 	"# ALT: replacement " #num "\n"						\
 	b_replacement(num)":\n\t" newinstr "\n" e_replacement(num) ":\n"
 
+==> https://lwn.net/Articles/634579/
+==> https://source.mcwhirter.io/craige/bluecross/commit/d69aa5e682c3ada69902936e6b7d8cd18827297a
+==> Allows to optionally patch newer instructions at runtime, based on CPU facilities availability.
+==> The @feature parameter is the required CPU feature for the new instruction. If it is
+==> not supported, the old instruction will be used.
 /* alternative assembly primitive: */
 #define ALTERNATIVE(oldinstr, newinstr, feature)			\
 	OLDINSTR(oldinstr, 1)						\

@@ -67,6 +67,7 @@ SYM_CODE_END(native_usergs_sysret64)
  * of SYSCALL instructions in the vDSO used, for example, as a
  * clock_gettimeofday fallback.
  *
+==> This is done by syscall instruction https://www.felixcloutier.com/x86/syscall
  * 64-bit SYSCALL saves rip to rcx, clears rflags.RF, then saves rflags to r11,
  * then loads new ss, cs, and rip from previously programmed MSRs.
  * rflags gets masked by a value from another MSR (so CLD and CLAC
@@ -97,22 +98,29 @@ SYM_CODE_START(entry_SYSCALL_64)
 
 	swapgs ==> Swap gs base address register from user space to kernel space
 	/* tss.sp2 is scratch space. */
-	movq	%rsp, PER_CPU_VAR(cpu_tss_rw + TSS_sp2) ==> Save user mode stack
+	movq	%rsp, PER_CPU_VAR(cpu_tss_rw + TSS_sp2) ==> The tss_sp2 is not used by hardware. Save user mode rsp register.
 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rsp ==> Switch to kernel CR3 with PTI mask cleared.
-	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp ==> Restore kernel mode stack
+	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp ==> Restore current (kernel mode) top of stack in tss_sp1
+	==> current kernel stack is kept in tss_sp1 and use space stack is kept in tss_sp2? The tss_sp0 is used by hardware.
 
+	==> Now we have moved to kernel stack
 	/* Construct struct pt_regs on stack */
+	==> Construct return frame with caller information
 	pushq	$__USER_DS				/* pt_regs->ss */
 	pushq	PER_CPU_VAR(cpu_tss_rw + TSS_sp2)	/* pt_regs->sp */
 	pushq	%r11					/* pt_regs->flags */
 	pushq	$__USER_CS				/* pt_regs->cs */
 	pushq	%rcx					/* pt_regs->ip */
 SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
+	==> first parameter of do_syscall_64. For C function, it pops parameter from righ to left.
 	pushq	%rax					/* pt_regs->orig_ax */
 
+	==> second parameter of do_syscall_64
 	PUSH_AND_CLEAR_REGS rax=$-ENOSYS ==> Why clear all registers?
 
 	/* IRQs are off. */
+	==> IRQs are off because syscall sets RFLAGS with "RFLAGS AND NOT(IA32_FMASK)", which disables IRQ
+	==> save rax and rsp because they're changed in do_syscall_64 C function call
 	movq	%rax, %rdi
 	movq	%rsp, %rsi
 	call	do_syscall_64		/* returns with IRQs disabled */
@@ -122,9 +130,10 @@ SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
 	 * a completely clean 64-bit userspace context.  If we're not,
 	 * go to the slow exit path.
 	 */
-	movq	RCX(%rsp), %rcx
-	movq	RIP(%rsp), %r11 ==> Fetch rip in pt_regs on stack
+	movq	RCX(%rsp), %rcx ==> Fetch rcx pushed by PUSH_AND_CLEAR_REGS.
+	movq	RIP(%rsp), %r11 ==> calling address saved by syscall in rcx. This is pushed on stack at "pushdq %rcx" before entry_SYSCALL_64_after_hwframe.
 
+	==> something happes between "pushed %rcx" and "PUSH_AND_CLEAR_REGS" to change rcx. If it is not changed, rcx equals rip.
 	cmpq	%rcx, %r11	/* SYSRET requires RCX == RIP */
 	jne	swapgs_restore_regs_and_return_to_usermode
 
@@ -161,6 +170,8 @@ SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
 	cmpq	%r11, EFLAGS(%rsp)		/* R11 == RFLAGS */
 	jne	swapgs_restore_regs_and_return_to_usermode
 
+	==> TF: trap flags
+	==> RF: resume flags
 	/*
 	 * SYSCALL clears RF when it saves RFLAGS in R11 and SYSRET cannot
 	 * restore RF properly. If the slowpath sets it for whatever reason, we
@@ -179,6 +190,7 @@ SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
 	 *
 	 * would never get past 'stuck_here'.
 	 */
+	==> Cannot fast return if RF or TF is enabled
 	testq	$(X86_EFLAGS_RF|X86_EFLAGS_TF), %r11
 	jnz	swapgs_restore_regs_and_return_to_usermode
 
@@ -193,6 +205,7 @@ SYM_INNER_LABEL(entry_SYSCALL_64_after_hwframe, SYM_L_GLOBAL)
 	 */
 syscall_return_via_sysret:
 	/* rcx and r11 are already restored (see code above) */
+	==> RDI is not poped. So rsp is at RDI
 	POP_REGS pop_rdi=0 skip_r11rcx=1
 
 	/*
@@ -200,21 +213,26 @@ syscall_return_via_sysret:
 	 * Save old stack pointer and switch to trampoline stack.
 	 */
 	movq	%rsp, %rdi
-	movq	PER_CPU_VAR(cpu_tss_rw + TSS_sp0), %rsp
+	movq	PER_CPU_VAR(cpu_tss_rw + TSS_sp0), %rsp ==> load trampoline stack
 	UNWIND_HINT_EMPTY
 
+	==> Now old stack pointer saved in rdi, and it is pointing at RDI since above POP_REGS doesn't pop rdi. (RSP-RDI) is the offset to get RSP on the stack. The old (kernel space) stack pointer is in rdi.
+	==> Push rsp and rdi on trampoline stack
 	pushq	RSP-RDI(%rdi)	/* RSP */
 	pushq	(%rdi)		/* RDI */
 
+	==> trampoline stack is the intermediate stack return from kernel to user space to avoid hack by stack leak
 	/*
 	 * We are on the trampoline stack.  All regs except RDI are live.
 	 * We can do future final exit work right here.
 	 */
+	==> Write posion data on stack
 	STACKLEAK_ERASE_NOCLOBBER
 
 	SWITCH_TO_USER_CR3_STACK scratch_reg=%rdi
 
 	popq	%rdi
+	==> Changes back to caller (user space) stack, which is at RSP offset of kernel space stack
 	popq	%rsp
 	USERGS_SYSRET64 ==> Switch gs base address and call sysretq to return to user mode
 SYM_CODE_END(entry_SYSCALL_64)
@@ -505,15 +523,18 @@ SYM_INNER_LABEL(swapgs_restore_regs_and_return_to_usermode, SYM_L_GLOBAL)
 #endif
 	POP_REGS pop_rdi=0
 
+	==> 中断/异常发生时，CPU 总是无条件自动 pushq ss/rsp/rflags/cs/rip 这五个寄存器。
 	/*
 	 * The stack is now user RDI, orig_ax, RIP, CS, EFLAGS, RSP, SS.
 	 * Save old stack pointer and switch to trampoline stack.
 	 */
 	movq	%rsp, %rdi
-	movq	PER_CPU_VAR(cpu_tss_rw + TSS_sp0), %rsp
+	movq	PER_CPU_VAR(cpu_tss_rw + TSS_sp0), %rsp ==> change to trampoline stack which is used to return from kernel space to user space
 	UNWIND_HINT_EMPTY
 
+	==> RDI is the kernel space stack pointer
 	/* Copy the IRET frame to the trampoline stack. */
+	==> These are required for iret to pop into related registers
 	pushq	6*8(%rdi)	/* SS */
 	pushq	5*8(%rdi)	/* RSP */
 	pushq	4*8(%rdi)	/* EFLAGS */
@@ -551,7 +572,7 @@ SYM_INNER_LABEL(restore_regs_and_return_to_kernel, SYM_L_GLOBAL)
 	 * ARCH_HAS_MEMBARRIER_SYNC_CORE rely on IRET core serialization
 	 * when returning from IPI handler.
 	 */
-	INTERRUPT_RETURN
+	INTERRUPT_RETURN ==> jmp native_iret
 
 SYM_INNER_LABEL_ALIGN(native_iret, SYM_L_GLOBAL)
 	UNWIND_HINT_IRET_REGS
@@ -571,6 +592,8 @@ SYM_INNER_LABEL(native_irq_return_iret, SYM_L_GLOBAL)
 	 * Double-faults due to espfix64 are handled in exc_double_fault.
 	 * Other faults here are fatal.
 	 */
+	==> https://www.felixcloutier.com/x86/iret:iretd
+	==> Note: syscall and sysret do not push or pop stacks. Interrupt and iret push and pop stacks.
 	iretq
 
 #ifdef CONFIG_X86_ESPFIX64
@@ -812,6 +835,7 @@ SYM_CODE_END(xen_failsafe_callback)
  *
  *     Y        GSBASE value at entry, must be restored in paranoid_exit
  */
+==> entry from kernel space
 SYM_CODE_START_LOCAL(paranoid_entry)
 	UNWIND_HINT_FUNC
 	cld ==> This makes sure DF flag is 0 and memory copy from low offset to high offset
@@ -853,20 +877,26 @@ SYM_CODE_START_LOCAL(paranoid_entry)
 	 * The MSR write ensures that no subsequent load is based on a
 	 * mispredicted GSBASE. No extra FENCE required.
 	 */
+	==> Note: Different from system call, it is not using swapgs, but get the gsbase from by CPU node segement and set that.
 	SAVE_AND_SET_GSBASE scratch_reg=%rax save_reg=%rbx
+
+	==> ebp is frame pointer
+	==> Old CS3 saved in r14
+	==> Old gsbase saved in rbx
 	ret
 
 .Lparanoid_entry_checkgs:
 	/* EBX = 1 -> kernel GSBASE active, no restore required */
+	==> ebx = 0 means user gsbase, and needs swapgs on exit. 1 means kernel gsbase, and no need swapgs on exit.
 	movl	$1, %ebx
 	/*
 	 * The kernel-enforced convention is a negative GSBASE indicates
 	 * a kernel value. No SWAPGS needed on entry and exit.
 	 */
 	movl	$MSR_GS_BASE, %ecx
-	rdmsr
-	testl	%edx, %edx
-	jns	.Lparanoid_entry_swapgs
+	rdmsr ==> Read gsbase into %edx
+	testl	%edx, %edx ==> just set flag
+	jns	.Lparanoid_entry_swapgs ==> Jump if %edx (gsbase) is positive ==> Jump if %edx is positive. Then it is user gsbase need swapgs
 	ret
 
 .Lparanoid_entry_swapgs:
@@ -925,7 +955,7 @@ SYM_CODE_START_LOCAL(paranoid_exit)
 .Lparanoid_exit_checkgs:
 	/* On non-FSGSBASE systems, conditionally do SWAPGS */
 	testl		%ebx, %ebx
-	jnz		restore_regs_and_return_to_kernel
+	jnz		restore_regs_and_return_to_kernel ==> kernel gsbase active
 
 	/* We are returning to a context with user GSBASE */
 	SWAPGS_UNSAFE_STACK
@@ -935,16 +965,17 @@ SYM_CODE_END(paranoid_exit)
 /*
  * Save all registers in pt_regs, and switch GS if needed.
  */
+==> entry from user space
 SYM_CODE_START_LOCAL(error_entry)
 	UNWIND_HINT_FUNC
 	cld
 	==> Push and clear all register, and put return address on top of irq stack
 	PUSH_AND_CLEAR_REGS save_ret=1
-	ENCODE_FRAME_POINTER 8 ==> TODO: Work for unwinder.
-	==> Check RPL of caller CS register to see if it is kernel spac3 (RPL=0) or user space (RPL is not 0)
+	ENCODE_FRAME_POINTER 8 ==> Save frame pointer in esp. The frame pointer is the position on stack that start for caller function. It helps for provide data with fixed offset. The esp pointer changes at running time.
+	==> Check RPL of caller CS register to see if it is kernel space (RPL=0) or user space (RPL is not 0)
 	==> Jump to error handling if it is called from kernel space.
 	==> https://www.cs.cmu.edu/~410/doc/segments/segments.html
-	testb	$3, CS+8(%rsp) ==> Because save_ret=1, the return address is pushed on stack. Need add offset 8.
+	testb	$3, CS+8(%rsp) ==> Because save_ret=1, the return address is pushed on stack. Need add offset 8 for the return address.
 	jz	.Lerror_kernelspace
 
 	==> enter from user space
@@ -953,6 +984,8 @@ SYM_CODE_START_LOCAL(error_entry)
 	 * from user mode due to an IRET fault.
 	 */
 	SWAPGS
+	==> See https://blog.csdn.net/weixin_39612540/article/details/110813303
+	==> This is memory barrier with lfence instruction, to avoid data access using user space GS.
 	FENCE_SWAPGS_USER_ENTRY
 	/* We have user CR3.  Change to kernel CR3. */
 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
@@ -961,9 +994,13 @@ SYM_CODE_START_LOCAL(error_entry)
 	/* Put us onto the real thread stack. */
 	popq	%r12				/* save return addr in %12 */
 	movq	%rsp, %rdi			/* arg0 = pt_regs pointer */
+	==> Defined in traps.c
 	call	sync_regs
+	==> sync_regs returns stack pointer of cpu_current_top_of_stack
 	movq	%rax, %rsp			/* switch stack */
+	==> Update ebp
 	ENCODE_FRAME_POINTER
+	==> Push return address on top of stack
 	pushq	%r12
 	ret
 
@@ -984,7 +1021,7 @@ SYM_CODE_START_LOCAL(error_entry)
 	cmpq	%rcx, RIP+8(%rsp)
 	je	.Lerror_bad_iret ==> Jump to this place if return address is native_irq_return_iret
 	movl	%ecx, %eax			/* zero extend */
-	cmpq	%rax, RIP+8(%rsp) ==> The low part return address (%ecx) is native_irq_return_iret
+	cmpq	%rax, RIP+8(%rsp) ==> The low part return address (%ecx) is native_irq_return_iret, which means the address is truncated. Need fix the truncated address and handle same as as above.
 	je	.Lbstep_iret
 	cmpq	$.Lgs_change, RIP+8(%rsp)
 	jne	.Lerror_entry_done_lfence
@@ -1018,7 +1055,7 @@ SYM_CODE_START_LOCAL(error_entry)
 	 */
 	mov	%rsp, %rdi
 	call	fixup_bad_iret ==> The parameter is from stack, which currently is return address plus pt_regs strcuture
-	mov	%rax, %rsp
+	mov	%rax, %rsp ==> %rax is the new stack position
 	jmp	.Lerror_entry_from_usermode_after_swapgs
 SYM_CODE_END(error_entry)
 
@@ -1026,8 +1063,8 @@ SYM_CODE_START_LOCAL(error_return)
 	UNWIND_HINT_REGS
 	DEBUG_ENTRY_ASSERT_IRQS_OFF
 	testb	$3, CS(%rsp)
-	jz	restore_regs_and_return_to_kernel
-	jmp	swapgs_restore_regs_and_return_to_usermode
+	jz	restore_regs_and_return_to_kernel ==> come from kernel space then return to kernel mode
+	jmp	swapgs_restore_regs_and_return_to_usermode ==> switch gs and return to user mode
 SYM_CODE_END(error_return)
 
 /*
