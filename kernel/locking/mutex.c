@@ -82,6 +82,7 @@ static inline struct task_struct *__owner_task(unsigned long owner)
 
 bool mutex_is_locked(struct mutex *lock)
 {
+	==> lock->owner points to task that occupying the mutex
 	return __mutex_owner(lock) != NULL;
 }
 EXPORT_SYMBOL(mutex_is_locked);
@@ -89,6 +90,7 @@ EXPORT_SYMBOL(mutex_is_locked);
 __must_check enum mutex_trylock_recursive_enum
 mutex_trylock_recursive(struct mutex *lock)
 {
+	==> The occupying task is trying lock again
 	if (unlikely(__mutex_owner(lock) == current))
 		return MUTEX_TRYLOCK_RECURSIVE;
 
@@ -114,6 +116,7 @@ static inline struct task_struct *__mutex_trylock_or_owner(struct mutex *lock)
 		unsigned long task = owner & ~MUTEX_FLAGS;
 
 		if (task) {
+			==> Mutex is occupied by another task
 			if (likely(task != curr))
 				break;
 
@@ -178,7 +181,8 @@ static __always_inline bool __mutex_unlock_fast(struct mutex *lock)
 {
 	unsigned long curr = (unsigned long)current;
 
-	if (atomic_long_cmpxchg_release(&lock->owner, curr, 0UL) == curr)
+	==> If owner==curr, set owner to 0
+	if (atomic_long_cmpxchg_release(&lock->owner, curr, 0UL) == curr) ==> //No wake up?
 		return true;
 
 	return false;
@@ -932,12 +936,14 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	struct ww_mutex *ww;
 	int ret;
 
+	==> same as _cond_resched to reschedule when preempt is disabled
 	might_sleep();
 
 #ifdef CONFIG_DEBUG_MUTEXES
 	DEBUG_LOCKS_WARN_ON(lock->magic != lock);
 #endif
 
+	==> Get ww_mutex which contains base at struct ww_mutex.
 	ww = container_of(lock, struct ww_mutex, base);
 	if (use_ww_ctx && ww_ctx) {
 		if (unlikely(ww_ctx == READ_ONCE(ww->ctx)))
@@ -956,7 +962,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	mutex_acquire_nest(&lock->dep_map, subclass, 0, nest_lock, ip);
 
 	if (__mutex_trylock(lock) ||
-	    mutex_optimistic_spin(lock, ww_ctx, use_ww_ctx, NULL)) {
+	    mutex_optimistic_spin(lock, ww_ctx, use_ww_ctx, NULL)) { ==> Try to spin & wait, if mutex owner is running on another cpu and preempt is disabled. This avoid waiting with reschedule.
 		/* got the lock, yay! */
 		lock_acquired(&lock->dep_map, ip);
 		if (use_ww_ctx && ww_ctx)

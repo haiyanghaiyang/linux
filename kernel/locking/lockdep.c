@@ -104,10 +104,12 @@ static inline bool lockdep_enabled(void)
 static arch_spinlock_t __lock = (arch_spinlock_t)__ARCH_SPIN_LOCK_UNLOCKED;
 static struct task_struct *__owner;
 
+==> almost same as spin_lock
 static inline void lockdep_lock(void)
 {
 	DEBUG_LOCKS_WARN_ON(!irqs_disabled());
 
+	==> lockdep_recursion is total number of waiting tasks for the lock plus 1
 	__this_cpu_inc(lockdep_recursion);
 	arch_spin_lock(&__lock);
 	__owner = current;
@@ -3891,7 +3893,7 @@ void lockdep_softirqs_off(unsigned long ip)
 		/*
 		 * We have done an ON -> OFF transition:
 		 */
-		current->softirqs_enabled = 0;
+		current->softirqs_enabled = 0 ==> //TODO: How softirqs_enabled variable disables softirq?
 		trace->softirq_disable_ip = ip;
 		trace->softirq_disable_event = ++trace->irq_events;
 		debug_atomic_inc(softirqs_off_events);

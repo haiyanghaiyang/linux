@@ -144,6 +144,9 @@ enum {
 
 /* struct worker is defined in workqueue_internal.h */
 
+==> Per cpu Worker pool (worker list)
+==> Two worker pools are defined for each cpu, for normal and high priority work queue. Both woker pools are statically defined.
+==> A list of unbound worker pool are defined. The unbound worker poll are created by get_unbound_pool().
 struct worker_pool {
 	raw_spinlock_t		lock;		/* the pool lock */
 	int			cpu;		/* I: the associated cpu */
@@ -167,6 +170,7 @@ struct worker_pool {
 						/* L: hash of busy workers */
 
 	struct worker		*manager;	/* L: purely informational */
+	==> A woker pool has a list of workers
 	struct list_head	workers;	/* A: attached workers */
 	struct completion	*detach_completion; /* all workers detached */
 
@@ -190,13 +194,25 @@ struct worker_pool {
 	struct rcu_head		rcu;
 } ____cacheline_aligned_in_smp;
 
+==> worker pool maintains a list of worker for specific cpu or unbound cpu. Default workers are created for each worker pool.
+==> The pool_workqueue is the bridge between worker pool and workqueue.
+==> pool_workqueue maintains a list of workqueue for a specific worker pool. The workqueues are created by client, associating with cpu (or unbound) and then related worker pool.
+==> The client creates workqueue, and schedule work into workqueue. Depends on workqueue property and flag, we associate related cpu and then the worker pool for the workqueue.
+==> The worker scheduled for the workqueue is added into scheduled list 
+==> For a work, if it determined to run on which pool, it is put at list of worker_pool's worklist. If delayed, the work is put on pool_workqueue's delayed_works list.
+==> Before running, the delayed work is moved from pool_workqueue's delayed_works to pool's worklist.
+
 /*
  * The per-pool workqueue.  While queued, the lower WORK_STRUCT_FLAG_BITS
  * of work_struct->data are used for flags and the remaining high bits
  * point to the pwq; thus, pwqs need to be aligned at two's power of the
  * number of flag bits.
  */
+==> Per pool workqueue, belonging to one worker_pool.
+==> Initialized by init_pwq().
+==> Every workqueue_struct has one or more pool_workqueue data, linked by pwqs_data.
 struct pool_workqueue {
+	==> The high priority workqueue of current cpu
 	struct worker_pool	*pool;		/* I: the associated pool */
 	struct workqueue_struct *wq;		/* I: the owning workqueue */
 	int			work_color;	/* L: current color */
@@ -218,7 +234,7 @@ struct pool_workqueue {
 	 */
 	struct work_struct	unbound_release_work;
 	struct rcu_head		rcu;
-} __aligned(1 << WORK_STRUCT_FLAG_BITS);
+} __aligned(1 << WORK_STRUCT_FLAG_BITS); ==> aligned to store in work_struct->data field
 
 /*
  * Structure used to wait for workqueue flush.
@@ -235,6 +251,8 @@ struct wq_device;
  * The externally visible workqueue.  It relays the issued work items to
  * the appropriate worker_pool through its pool_workqueues.
  */
+==> New work are added into either worker_pool's worklist, or pool_workqueue's delayed_works. New work is not queued in workqueue_struct.
+==> The structure defines workqueue property, like priority.
 struct workqueue_struct {
 	struct list_head	pwqs;		/* WR: all pwqs of this wq */
 	struct list_head	list;		/* PR: list of all workqueues */
@@ -326,11 +344,13 @@ static bool wq_debug_force_rr_cpu = false;
 module_param_named(debug_force_rr_cpu, wq_debug_force_rr_cpu, bool, 0644);
 
 /* the per-cpu worker pools */
+==> Each cpu has two worker pool, for normal and high priorities.
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct worker_pool [NR_STD_WORKER_POOLS], cpu_worker_pools);
 
 static DEFINE_IDR(worker_pool_idr);	/* PR: idr of all pools */
 
 /* PL: hash of all unbound pools keyed by pool->attrs */
+==> The system has a list of unbound pools managed by hash. Workqueue calculates hash of its attr to find related unbound pool.
 static DEFINE_HASHTABLE(unbound_pool_hash, UNBOUND_POOL_HASH_ORDER);
 
 /* I: attributes used when instantiating standard unbound pools on demand */
@@ -760,6 +780,7 @@ static bool work_is_canceling(struct work_struct *work)
  * they're being called with pool->lock held.
  */
 
+==> Need more worker is nr_running is zero.
 static bool __need_more_worker(struct worker_pool *pool)
 {
 	return !atomic_read(&pool->nr_running);
@@ -1325,8 +1346,10 @@ static void insert_work(struct pool_workqueue *pwq, struct work_struct *work,
 	struct worker_pool *pool = pwq->pool;
 
 	/* we own @work, set data and link */
+	==> Set pwq pointer into work->data
 	set_work_pwq(work, pwq, extra_flags);
 	list_add_tail(&work->entry, head);
+	==> increase pwq reference
 	get_pwq(pwq);
 
 	/*
@@ -1361,12 +1384,14 @@ static bool is_chained_work(struct workqueue_struct *wq)
  * by wq_unbound_cpumask.  Otherwise, round robin among the allowed ones to
  * avoid perturbing sensitive tasks.
  */
+==> cpu is the local cpu
 static int wq_select_unbound_cpu(int cpu)
 {
 	static bool printed_dbg_warning;
 	int new_cpu;
 
 	if (likely(!wq_debug_force_rr_cpu)) {
+		==> select local cpu if unbound cpumask is enabled
 		if (cpumask_test_cpu(cpu, wq_unbound_cpumask))
 			return cpu;
 	} else if (!printed_dbg_warning) {
@@ -1377,6 +1402,7 @@ static int wq_select_unbound_cpu(int cpu)
 	if (cpumask_empty(wq_unbound_cpumask))
 		return cpu;
 
+	==> Select the next cpu of round robin list of unbound cpu list.
 	new_cpu = __this_cpu_read(wq_rr_cpu_last);
 	new_cpu = cpumask_next_and(new_cpu, wq_unbound_cpumask, cpu_online_mask);
 	if (unlikely(new_cpu >= nr_cpu_ids)) {
@@ -1418,8 +1444,10 @@ retry:
 	if (wq->flags & WQ_UNBOUND) {
 		if (req_cpu == WORK_CPU_UNBOUND)
 			cpu = wq_select_unbound_cpu(raw_smp_processor_id());
+		==> Get pwq for the cpu
 		pwq = unbound_pwq_by_node(wq, cpu_to_node(cpu));
 	} else {
+		==> Do not use requested cpu if it has unbound feature.
 		if (req_cpu == WORK_CPU_UNBOUND)
 			cpu = raw_smp_processor_id();
 		pwq = per_cpu_ptr(wq->cpu_pwqs, cpu);
@@ -1436,6 +1464,7 @@ retry:
 
 		raw_spin_lock(&last_pool->lock);
 
+		==> If previous worker for this work's pwq is not changed, just use that worker pool and worker.
 		worker = find_worker_executing_work(last_pool, work);
 
 		if (worker && worker->current_pwq->wq == wq) {
@@ -1477,14 +1506,17 @@ retry:
 	pwq->nr_in_flight[pwq->work_color]++;
 	work_flags = work_color_to_flags(pwq->work_color);
 
+	==> Find pool of the pwq and insert the work into the pool's worklist.
 	if (likely(pwq->nr_active < pwq->max_active)) {
 		trace_workqueue_activate_work(work);
 		pwq->nr_active++;
+		==> Add work into worker pool's current worklist
 		worklist = &pwq->pool->worklist;
 		if (list_empty(worklist))
 			pwq->pool->watchdog_ts = jiffies;
 	} else {
 		work_flags |= WORK_STRUCT_DELAYED;
+		==> Not more active workers. Add into pool_workqueue's delayed worklist
 		worklist = &pwq->delayed_works;
 	}
 
@@ -1514,6 +1546,7 @@ bool queue_work_on(int cpu, struct workqueue_struct *wq,
 
 	local_irq_save(flags);
 
+	==> Check whether the work is already queued
 	if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
 		__queue_work(cpu, wq, work);
 		ret = true;
@@ -1788,6 +1821,7 @@ static void worker_enter_idle(struct worker *worker)
 	 * nr_running, the warning may trigger spuriously.  Check iff
 	 * unbind is not in progress.
 	 */
+	==> //Why nr_workers equals nr_idle?
 	WARN_ON_ONCE(!(pool->flags & POOL_DISASSOCIATED) &&
 		     pool->nr_workers == pool->nr_idle &&
 		     atomic_read(&pool->nr_running));
@@ -1926,6 +1960,7 @@ static struct worker *create_worker(struct worker_pool *pool)
 	else
 		snprintf(id_buf, sizeof(id_buf), "u%d:%d", pool->id, id);
 
+	==> Each worker is a kernel thread
 	worker->task = kthread_create_on_node(worker_thread, worker, pool->node,
 					      "kworker/%s", id_buf);
 	if (IS_ERR(worker->task))
@@ -2198,6 +2233,7 @@ __acquires(&pool->lock)
 
 	/* claim and dequeue */
 	debug_work_deactivate(work);
+	==> Add current work into busy hash
 	hash_add(pool->busy_hash, &worker->hentry, (unsigned long)work);
 	worker->current_work = work;
 	worker->current_func = work->func;
@@ -2392,6 +2428,7 @@ recheck:
 	 * preparing to process a work or actually processing it.
 	 * Make sure nobody diddled with it while I was sleeping.
 	 */
+	==> Current worker should not on scheduled list
 	WARN_ON_ONCE(!list_empty(&worker->scheduled));
 
 	/*
@@ -2404,6 +2441,7 @@ recheck:
 	worker_clr_flags(worker, WORKER_PREP | WORKER_REBOUND);
 
 	do {
+		==> Choose work on worker pool
 		struct work_struct *work =
 			list_first_entry(&pool->worklist,
 					 struct work_struct, entry);
@@ -2416,6 +2454,7 @@ recheck:
 			if (unlikely(!list_empty(&worker->scheduled)))
 				process_scheduled_works(worker);
 		} else {
+			==> Move all list linked with work to worker's scheduled list
 			move_linked_works(work, &worker->scheduled, NULL);
 			process_scheduled_works(worker);
 		}
@@ -3779,6 +3818,7 @@ static void link_pwq(struct pool_workqueue *pwq)
 	pwq_adjust_max_active(pwq);
 
 	/* link in @pwq */
+	==> Add pwq into workqueue's pwq list
 	list_add_rcu(&pwq->pwqs_node, &wq->pwqs);
 }
 
@@ -4161,15 +4201,18 @@ static int alloc_and_link_pwqs(struct workqueue_struct *wq)
 		if (!wq->cpu_pwqs)
 			return -ENOMEM;
 
+		==> Setup CPU pool workqueue with related CPU woker pool.
 		for_each_possible_cpu(cpu) {
 			struct pool_workqueue *pwq =
 				per_cpu_ptr(wq->cpu_pwqs, cpu);
 			struct worker_pool *cpu_pools =
 				per_cpu(cpu_worker_pools, cpu);
 
+		        ==> Hook wq and cpu_tool to pwq
 			init_pwq(pwq, wq, &cpu_pools[highpri]);
 
 			mutex_lock(&wq->mutex);
+			==> Add pwq to list of wq's pwq_nodes
 			link_pwq(pwq);
 			mutex_unlock(&wq->mutex);
 		}
@@ -4219,6 +4262,7 @@ static int init_rescuer(struct workqueue_struct *wq)
 	if (!rescuer)
 		return -ENOMEM;
 
+	==> Create rescuer for workqueue which has one rescuer thread
 	rescuer->rescue_wq = wq;
 	rescuer->task = kthread_create(rescuer_thread, rescuer, "%s", wq->name);
 	if (IS_ERR(rescuer->task)) {
@@ -4229,6 +4273,7 @@ static int init_rescuer(struct workqueue_struct *wq)
 
 	wq->rescuer = rescuer;
 	kthread_bind_mask(rescuer->task, cpu_possible_mask);
+	==> Wake up rescuer task
 	wake_up_process(rescuer->task);
 
 	return 0;
@@ -4267,6 +4312,7 @@ struct workqueue_struct *alloc_workqueue(const char *fmt,
 		return NULL;
 
 	if (flags & WQ_UNBOUND) {
+		==> unbound_attrs is used for hash
 		wq->unbound_attrs = alloc_workqueue_attrs();
 		if (!wq->unbound_attrs)
 			goto err_free_wq;
@@ -4292,6 +4338,7 @@ struct workqueue_struct *alloc_workqueue(const char *fmt,
 	wq_init_lockdep(wq);
 	INIT_LIST_HEAD(&wq->list);
 
+	==> Allocate pool workqueue, and link with related CPU's worker pool.
 	if (alloc_and_link_pwqs(wq) < 0)
 		goto err_unreg_lockdep;
 
@@ -4313,6 +4360,7 @@ struct workqueue_struct *alloc_workqueue(const char *fmt,
 		pwq_adjust_max_active(pwq);
 	mutex_unlock(&wq->mutex);
 
+	==> Add wq into workqueues which is the list of all work queues
 	list_add_tail_rcu(&wq->list, &workqueues);
 
 	mutex_unlock(&wq_pool_mutex);
@@ -5929,6 +5977,7 @@ void __init workqueue_init_early(void)
 		struct worker_pool *pool;
 
 		i = 0;
+		==> Initialize normal and high priority pools for each cpu
 		for_each_cpu_worker_pool(pool, cpu) {
 			BUG_ON(init_worker_pool(pool));
 			pool->cpu = cpu;
@@ -5944,6 +5993,7 @@ void __init workqueue_init_early(void)
 	}
 
 	/* create default unbound and ordered wq attrs */
+	==> unbound workqueue doesn't belong to any cpu
 	for (i = 0; i < NR_STD_WORKER_POOLS; i++) {
 		struct workqueue_attrs *attrs;
 
@@ -6004,10 +6054,12 @@ void __init workqueue_init(void)
 	 *
 	 * Also, while iterating workqueues, create rescuers if requested.
 	 */
+	==> TODO: NUMA init
 	wq_numa_init();
 
 	mutex_lock(&wq_pool_mutex);
 
+	==> Set pool numa node to it's associated cpu's numa node
 	for_each_possible_cpu(cpu) {
 		for_each_cpu_worker_pool(pool, cpu) {
 			pool->node = cpu_to_node(cpu);
@@ -6024,6 +6076,7 @@ void __init workqueue_init(void)
 	mutex_unlock(&wq_pool_mutex);
 
 	/* create the initial workers */
+	==> Create woker for each worker pool
 	for_each_online_cpu(cpu) {
 		for_each_cpu_worker_pool(pool, cpu) {
 			pool->flags &= ~POOL_DISASSOCIATED;
@@ -6031,6 +6084,7 @@ void __init workqueue_init(void)
 		}
 	}
 
+	==> Create workers for unbound pool
 	hash_for_each(unbound_pool_hash, bkt, pool, hash_node)
 		BUG_ON(!create_worker(pool));
 

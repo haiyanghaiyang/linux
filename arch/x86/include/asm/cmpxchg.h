@@ -93,6 +93,10 @@ extern void __add_wrong_size(void)
 		volatile u8 *__ptr = (volatile u8 *)(ptr);		\
 		asm volatile(lock "cmpxchgb %2,%1"			\
 			     : "=a" (__ret), "+m" (*__ptr)		\
+			     ==> "0" means using same register as output with index 0, which is "a", or EAX
+			     ==> Compare old and ptr, if same, store new in ptr.
+			     ==> note: Here is AT&T asm syntax. For Intel syntax, it should be "cmpxchgb %1 %2"
+			     ==> returns EAX (old) value
 			     : "q" (__new), "0" (__old)			\
 			     : "memory");				\
 		break;							\

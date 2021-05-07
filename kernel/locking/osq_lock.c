@@ -104,6 +104,9 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	 * the node fields we just initialised) semantics when updating
 	 * the lock tail.
 	 */
+	==> Atomically get current osq tail and write current cpu at tail
+	==> If osq tail is empty, the current cpu wins the lock
+	==> atomic function call makes sure the queue is serized.
 	old = atomic_xchg(&lock->tail, curr);
 	if (old == OSQ_UNLOCKED_VAL)
 		return true;
@@ -118,6 +121,7 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	 * WMB				MB
 	 * prev->next = node		next->prev = prev // unqueue-C
 	 *
+	==> What does this mean?
 	 * Here 'node->prev' and 'next->prev' are the same variable and we need
 	 * to ensure these stores happen in-order to avoid corrupting the list.
 	 */

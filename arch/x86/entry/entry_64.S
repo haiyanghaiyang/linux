@@ -707,6 +707,7 @@ SYM_CODE_START_LOCAL_NOALIGN(.Lbad_gs)
 SYM_CODE_END(.Lbad_gs)
 	.previous
 
+==> TODO: How C function parameter changed to this registers?
 /*
  * rdi: New stack pointer points to the top word of the stack
  * rsi: Function pointer
