@@ -106,6 +106,8 @@ static inline unsigned long __owner_flags(unsigned long owner)
 /*
  * Trylock variant that retuns the owning task on failure.
  */
+==> return NULL if gets the lock
+==> It happens to get lock if current task is picked up as the new owner.
 static inline struct task_struct *__mutex_trylock_or_owner(struct mutex *lock)
 {
 	unsigned long owner, curr = (unsigned long)current;
@@ -116,15 +118,20 @@ static inline struct task_struct *__mutex_trylock_or_owner(struct mutex *lock)
 		unsigned long task = owner & ~MUTEX_FLAGS;
 
 		if (task) {
-			==> Mutex is occupied by another task
+			==> Mutex is occupied by another task. Just break and return current lock owner
 			if (likely(task != curr))
 				break;
 
+			==> Mutex owner is current task, but pickup flag is not set.
+			==> This could happen for the next round of this loop when the flag is cleared by next statement.
 			if (likely(!(flags & MUTEX_FLAG_PICKUP)))
 				break;
 
+			==> Current task is picked up as the new owner
+			==> Clean up the pickup flag
 			flags &= ~MUTEX_FLAG_PICKUP;
 		} else {
+			==> //Why no task here?
 #ifdef CONFIG_DEBUG_MUTEXES
 			DEBUG_LOCKS_WARN_ON(flags & MUTEX_FLAG_PICKUP);
 #endif
@@ -137,6 +144,7 @@ static inline struct task_struct *__mutex_trylock_or_owner(struct mutex *lock)
 		 */
 		flags &= ~MUTEX_FLAG_HANDOFF;
 
+		==> //Why lock->owner could be different from owner? Because lock->owner's flag could be changed?
 		old = atomic_long_cmpxchg_acquire(&lock->owner, owner, curr | flags);
 		if (old == owner)
 			return NULL;
@@ -150,6 +158,7 @@ static inline struct task_struct *__mutex_trylock_or_owner(struct mutex *lock)
 /*
  * Actual trylock that will work on any unlocked state.
  */
+==> It happens to get lock if current task is picked up as the new owner.
 static inline bool __mutex_trylock(struct mutex *lock)
 {
 	return !__mutex_trylock_or_owner(lock);
@@ -521,6 +530,7 @@ bool ww_mutex_spin_on_owner(struct mutex *lock, struct ww_acquire_ctx *ww_ctx,
 	 * Check this in every inner iteration because we may
 	 * be racing against another thread's ww_mutex_lock.
 	 */
+	//TODO: What does this mean?
 	if (ww_ctx->acquired > 0 && READ_ONCE(ww->ctx))
 		return false;
 
@@ -557,6 +567,7 @@ bool mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner,
 	bool ret = true;
 
 	rcu_read_lock();
+	==> loop while the owner is not changed
 	while (__mutex_owner(lock) == owner) {
 		/*
 		 * Ensure we emit the owner->on_cpu, dereference _after_
@@ -569,6 +580,7 @@ bool mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner,
 		/*
 		 * Use vcpu_is_preempted to detect lock holder preemption issue.
 		 */
+		==> Do not wait if owner is not running or need reschedule.
 		if (!owner->on_cpu || need_resched() ||
 				vcpu_is_preempted(task_cpu(owner))) {
 			ret = false;
@@ -584,6 +596,7 @@ bool mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner,
 	}
 	rcu_read_unlock();
 
+	==> mutex owner is changed
 	return ret;
 }
 
@@ -650,6 +663,7 @@ mutex_optimistic_spin(struct mutex *lock, struct ww_acquire_ctx *ww_ctx,
 		 * is not going to take OSQ lock anyway, there is no need
 		 * to call mutex_can_spin_on_owner().
 		 */
+		==> If lock owner is on cpu and preempt is disabled, then can spin on owner. This means the owner is most likely to release the lock soon.
 		if (!mutex_can_spin_on_owner(lock))
 			goto fail;
 
@@ -658,6 +672,7 @@ mutex_optimistic_spin(struct mutex *lock, struct ww_acquire_ctx *ww_ctx,
 		 * acquire the mutex all at once, the spinners need to take a
 		 * MCS (queued) lock first before spinning on the owner field.
 		 */
+		==> Allow only one node optimistic spin for the mutex lock
 		if (!osq_lock(&lock->osq))
 			goto fail;
 	}
@@ -674,6 +689,7 @@ mutex_optimistic_spin(struct mutex *lock, struct ww_acquire_ctx *ww_ctx,
 		 * There's an owner, wait for it to either
 		 * release the lock or go to sleep.
 		 */
+		==> Spin till lock owner changed or cannot wait
 		if (!mutex_spin_on_owner(lock, owner, ww_ctx, waiter))
 			goto fail_unlock;
 
@@ -1074,9 +1090,10 @@ acquired:
 			__ww_mutex_check_waiters(lock, ww_ctx);
 	}
 
+	==> Remove waiter from list
 	mutex_remove_waiter(lock, &waiter, current);
 	if (likely(list_empty(&lock->wait_list)))
-		__mutex_clear_flag(lock, MUTEX_FLAGS);
+		__mutex_clear_flag(lock, MUTEX_FLAGS); ==> Clear MUTEXT_FLAGS
 
 	debug_mutex_free_waiter(&waiter);
 

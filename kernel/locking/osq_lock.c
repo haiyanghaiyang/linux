@@ -38,6 +38,8 @@ static inline struct optimistic_spin_node *decode_cpu(int encoded_cpu_val)
  * Get a stable @node->next pointer, either for unlock() or unqueue() purposes.
  * Can return NULL in case we were the last queued and we updated @lock instead.
  */
+==> https://www.cnblogs.com/LoyenWang/p/12826811.html
+==> Get next node on the queue
 static inline struct optimistic_spin_node *
 osq_wait_next(struct optimistic_spin_queue *lock,
 	      struct optimistic_spin_node *node,
@@ -55,6 +57,7 @@ osq_wait_next(struct optimistic_spin_queue *lock,
 	old = prev ? prev->cpu : OSQ_UNLOCKED_VAL;
 
 	for (;;) {
+		==> Current node is at queue tail, and change prev as tail successfully. Then return next=NULL.
 		if (atomic_read(&lock->tail) == curr &&
 		    atomic_cmpxchg_acquire(&lock->tail, curr, old) == curr) {
 			/*
@@ -76,6 +79,7 @@ osq_wait_next(struct optimistic_spin_queue *lock,
 		 * wait for a new @node->next from its Step-C.
 		 */
 		if (node->next) {
+			==> next = &node->next, and &node->next = NULL
 			next = xchg(&node->next, NULL);
 			if (next)
 				break;
@@ -107,10 +111,12 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	==> Atomically get current osq tail and write current cpu at tail
 	==> If osq tail is empty, the current cpu wins the lock
 	==> atomic function call makes sure the queue is serized.
+	==> //How to avoid the same cpu call this again then the same node is added for multiple times?
 	old = atomic_xchg(&lock->tail, curr);
 	if (old == OSQ_UNLOCKED_VAL)
 		return true;
 
+	==> Add current node at tail of the queue
 	prev = decode_cpu(old);
 	node->prev = prev;
 
@@ -121,9 +127,15 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	 * WMB				MB
 	 * prev->next = node		next->prev = prev // unqueue-C
 	 *
-	==> What does this mean?
 	 * Here 'node->prev' and 'next->prev' are the same variable and we need
 	 * to ensure these stores happen in-order to avoid corrupting the list.
+	==> What does this mean?
+	==> This happens in this way
+	==> nodeA->nodeB->nodeC->tail
+	==> 1. nodeA and nodeB are on the list
+	==> 2. nodeC lock and added into list. nodeC->prev = prev (nodeB)
+	==> 3. At the same time, nodeB has to exit from spin to high priority tasks.
+	==> 4. NodeB calls osq_wait_next() to get nodeB as next node, and set next(nodeC)->prev = prev (nodeA)
 	 */
 	smp_wmb();
 
@@ -144,6 +156,8 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	 * is implemented with a monitor-wait. vcpu_is_preempted() relies on
 	 * polling, be careful.
 	 */
+	==> Loop (spin) until node->locked is true (current cpu gets the lock), or need reschedule, or previous node is preempted (which means it cannot spin and need yield cpu to higher priority tasks). 
+	==> return true if node->locked is true which means current cpu gets the lock
 	if (smp_cond_load_relaxed(&node->locked, VAL || need_resched() ||
 				  vcpu_is_preempted(node_cpu(node->prev))))
 		return true;
@@ -157,11 +171,17 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	 * (or later).
 	 */
 
+	==> node->locked is false now, but maybe acquired by another node
+	==> Now current cpu doesn't get the lock, and cannot spin
+	==> Try to remove current node from list
 	for (;;) {
 		/*
 		 * cpu_relax() below implies a compiler barrier which would
 		 * prevent this comparison being optimized away.
 		 */
+		==> If prev->next is current node, change prev->next to NULL and break
+		==> This removes current node from prev->next successfully, and break for next step to set next->prev to prev
+		==> The prev->next is possibly be changed to another node by concurrent cpu
 		if (data_race(prev->next) == node &&
 		    cmpxchg(&prev->next, node, NULL) == node)
 			break;
@@ -171,6 +191,7 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 		 * in which case we should observe @node->locked becomming
 		 * true.
 		 */
+		==> Check whether current cpu gets the lock
 		if (smp_load_acquire(&node->locked))
 			return true;
 
@@ -180,6 +201,7 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 		 * Or we race against a concurrent unqueue()'s step-B, in which
 		 * case its step-C will write us a new @node->prev pointer.
 		 */
+		==> Get new prev and try again to remove current cpu from the queue
 		prev = READ_ONCE(node->prev);
 	}
 
@@ -190,6 +212,7 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	 * back to @prev.
 	 */
 
+	==> Get node->next. If it's NULL, just return. Otherwise, need link prev and next nodes.
 	next = osq_wait_next(lock, node, prev);
 	if (!next)
 		return false;
@@ -202,6 +225,7 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 	 * it will wait in Step-A.
 	 */
 
+	==> Link prev and next
 	WRITE_ONCE(next->prev, prev);
 	WRITE_ONCE(prev->next, next);
 
@@ -216,6 +240,7 @@ void osq_unlock(struct optimistic_spin_queue *lock)
 	/*
 	 * Fast path for the uncontended case.
 	 */
+	==> If current node is at tail of the queue, then no other nodes. Set lock tail as unlocked value and return.
 	if (likely(atomic_cmpxchg_release(&lock->tail, curr,
 					  OSQ_UNLOCKED_VAL) == curr))
 		return;
@@ -223,13 +248,17 @@ void osq_unlock(struct optimistic_spin_queue *lock)
 	/*
 	 * Second most likely case.
 	 */
+	==> Get node of current cpu
 	node = this_cpu_ptr(&osq_node);
+	==> next = node->next, node->next = NULL
 	next = xchg(&node->next, NULL);
 	if (next) {
+		==> Set next node's locked as 1, which gets the lock
 		WRITE_ONCE(next->locked, 1);
 		return;
 	}
 
+	==> reliably get the next node
 	next = osq_wait_next(lock, node, NULL);
 	if (next)
 		WRITE_ONCE(next->locked, 1);

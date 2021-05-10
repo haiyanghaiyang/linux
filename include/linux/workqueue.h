@@ -100,6 +100,7 @@ enum {
 };
 
 struct work_struct {
+	==> contains various data
 	atomic_long_t data;
 	struct list_head entry;
 	work_func_t func;

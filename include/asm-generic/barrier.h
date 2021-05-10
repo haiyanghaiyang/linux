@@ -155,6 +155,8 @@ do {									\
 #define smp_mb__after_atomic()	barrier()
 #endif
 
+==> See https://lwn.net/Articles/576486/
+==> smp_store_release() writes a value back to memory, ensuring that the write happens after any previously-executed reads or writes.
 #ifndef smp_store_release
 #define smp_store_release(p, v)						\
 do {									\
@@ -164,6 +166,7 @@ do {									\
 } while (0)
 #endif
 
+==> smp_load_acquire() forces a read of a location in memory (in much the same way as ACCESS_ONCE()), but it ensures that the read happens before any subsequent reads or writes.
 #ifndef smp_load_acquire
 #define smp_load_acquire(p)						\
 ({									\
