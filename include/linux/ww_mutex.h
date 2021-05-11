@@ -55,6 +55,7 @@ struct ww_acquire_ctx {
 # define __WW_CLASS_MUTEX_INITIALIZER(lockname, class)
 #endif
 
+==> ww_ctx initialization
 #define __WW_CLASS_INITIALIZER(ww_class, _is_wait_die)	    \
 		{ .stamp = ATOMIC_LONG_INIT(0) \
 		, .acquire_name = #ww_class "_acquire" \
