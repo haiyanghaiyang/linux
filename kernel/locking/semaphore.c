@@ -54,7 +54,9 @@ void down(struct semaphore *sem)
 {
 	unsigned long flags;
 
+	==> Use spinlock to protect sem data structure
 	raw_spin_lock_irqsave(&sem->lock, flags);
+	==> If there's still count, just decrease and return
 	if (likely(sem->count > 0))
 		sem->count--;
 	else
@@ -206,17 +208,21 @@ static inline int __sched __down_common(struct semaphore *sem, long state,
 {
 	struct semaphore_waiter waiter;
 
+	==> Add current task at tail of waiter list
 	list_add_tail(&waiter.list, &sem->wait_list);
 	waiter.task = current;
 	waiter.up = false;
 
 	for (;;) {
+		==> Pending signal
 		if (signal_pending_state(state, current))
 			goto interrupted;
+		==> Exit when timeout
 		if (unlikely(timeout <= 0))
 			goto timed_out;
 		__set_current_state(state);
 		raw_spin_unlock_irq(&sem->lock);
+		==> schedule to wait
 		timeout = schedule_timeout(timeout);
 		raw_spin_lock_irq(&sem->lock);
 		if (waiter.up)

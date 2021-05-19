@@ -79,6 +79,7 @@ notrace int sched_clock_read_retry(unsigned int seq)
 	return read_seqcount_retry(&cd.seq, seq);
 }
 
+==> https://www.kernel.org/doc/html/latest/timers/timekeeping.html#sched-clock
 unsigned long long notrace sched_clock(void)
 {
 	u64 cyc, res;

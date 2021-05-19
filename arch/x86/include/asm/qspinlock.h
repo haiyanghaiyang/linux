@@ -11,6 +11,7 @@
 #define _Q_PENDING_LOOPS	(1 << 9)
 
 #define queued_fetch_set_pending_acquire queued_fetch_set_pending_acquire
+==> Set pending bits for the lock->val
 static __always_inline u32 queued_fetch_set_pending_acquire(struct qspinlock *lock)
 {
 	u32 val;
@@ -20,8 +21,11 @@ static __always_inline u32 queued_fetch_set_pending_acquire(struct qspinlock *lo
 	 * and CONFIG_PROFILE_ALL_BRANCHES=y results in a label inside a
 	 * statement expression, which GCC doesn't like.
 	 */
+	==> If lock->val.counter has Q_PENDING_OFFSET set, val=_Q_PENDING_VAL;
+	==> Set lock->val.counter = Q_PENDING_OFFSET;
 	val = GEN_BINARY_RMWcc(LOCK_PREFIX "btsl", lock->val.counter, c,
 			       "I", _Q_PENDING_OFFSET) * _Q_PENDING_VAL;
+	==> Copy other value other than pending bits from lock->val
 	val |= atomic_read(&lock->val) & ~_Q_PENDING_MASK;
 
 	return val;

@@ -312,6 +312,7 @@ static __always_inline u32  __pv_wait_head_or_lock(struct qspinlock *lock,
  * contended             :    (*,x,y) +--> (*,0,0) ---> (*,0,1) -'  :
  *   queue               :         ^--'                             :
  */
+==> Premption is disabled. The lock data structure is shared among multiprocessors.
 void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 {
 	struct mcs_spinlock *prev, *next, *node;
@@ -332,8 +333,11 @@ void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 	 *
 	 * 0,1,0 -> 0,0,1
 	 */
+	==> There is another spin pending for the lock, and the tail information is 0 which means the queue is not there.
+	==> optistimic spin without using queue, but till max loops
 	if (val == _Q_PENDING_VAL) {
 		int cnt = _Q_PENDING_LOOPS;
+		==> Read memory from &(lock->val) into VAL, and spin (cpu_relax) until lock->val is not pending value or run out of pending loops
 		val = atomic_cond_read_relaxed(&lock->val,
 					       (VAL != _Q_PENDING_VAL) || !cnt--);
 	}
@@ -341,6 +345,8 @@ void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 	/*
 	 * If we observe any contention; queue.
 	 */
+	==> There is pending spin waiting for the lock, with or without queue
+	==> Then it has to add itself into queue to wait.
 	if (val & ~_Q_LOCKED_MASK)
 		goto queue;
 
@@ -349,6 +355,7 @@ void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 	 *
 	 * 0,0,* -> 0,1,* -> 0,0,1 pending, trylock
 	 */
+	==> Save lock->val pending offset to val, and set pending flag to lock->val
 	val = queued_fetch_set_pending_acquire(lock);
 
 	/*
@@ -361,6 +368,8 @@ void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 	if (unlikely(val & ~_Q_LOCKED_MASK)) {
 
 		/* Undo PENDING if we set it. */
+		==> If pending is not set previously, we just undo above setting for pending flag
+		==> //This means queue is there, but no pending flag?
 		if (!(val & _Q_PENDING_MASK))
 			clear_pending(lock);
 
@@ -378,6 +387,8 @@ void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 	 * clear_pending_set_locked() implementations imply full
 	 * barriers.
 	 */
+	==> Pending flag is set, and queue is empty. Spin until locked bit is clear to get the lock
+	==> If second task comes, it will spin for max pending loops and add itself into queue.
 	if (val & _Q_LOCKED_MASK)
 		atomic_cond_read_acquire(&lock->val, !(VAL & _Q_LOCKED_MASK));
 
@@ -386,6 +397,7 @@ void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 	 *
 	 * 0,1,0 -> 0,0,1
 	 */
+	==> Clear pending bit and set locked bit
 	clear_pending_set_locked(lock);
 	lockevent_inc(lock_pending);
 	return;
@@ -398,6 +410,8 @@ queue:
 	lockevent_inc(lock_slowpath);
 pv_queue:
 	node = this_cpu_ptr(&qnodes[0].mcs);
+	==> The count records nested spinlock, with task interrupted by IRQ or NMI
+	==> The maximum allowed nest is 4.
 	idx = node->count++;
 	tail = encode_tail(smp_processor_id(), idx);
 
@@ -412,11 +426,13 @@ pv_queue:
 	 */
 	if (unlikely(idx >= MAX_NODES)) {
 		lockevent_inc(lock_no_node);
+		==> spin until lock is unlocked and gets the lock
 		while (!queued_spin_trylock(lock))
 			cpu_relax();
 		goto release;
 	}
 
+	==> Get the mcs lock for idx
 	node = grab_mcs_node(node, idx);
 
 	/*
@@ -457,6 +473,8 @@ pv_queue:
 	 *
 	 * p,*,* -> n,*,*
 	 */
+	==> Put tail at lock->tail, and get previous lock->tail into old
+	==> //Update lock->tail impacts cache invalidation?
 	old = xchg_tail(lock, tail);
 	next = NULL;
 
@@ -468,9 +486,13 @@ pv_queue:
 		prev = decode_tail(old);
 
 		/* Link @node into the waitqueue. */
+		==> The prev might be other cpu node, or local cpu node. IRQ or NMI may result nest spinlock
 		WRITE_ONCE(prev->next, node);
 
 		pv_wait_node(node, prev);
+		==> spin till spin locked is true. Note: different from previous spin on lock->val,
+		==> this spin is on local node's locked variable which has better performance without
+		==> cache invalidate due to lock->val change.
 		arch_mcs_spin_lock_contended(&node->locked);
 
 		/*
@@ -508,6 +530,7 @@ pv_queue:
 	if ((val = pv_wait_head_or_lock(lock, node)))
 		goto locked;
 
+	==> Read till locked and pending mask are cleard
 	val = atomic_cond_read_acquire(&lock->val, !(VAL & _Q_LOCKED_PENDING_MASK));
 
 locked:
@@ -532,7 +555,9 @@ locked:
 	 *       above wait condition, therefore any concurrent setting of
 	 *       PENDING will make the uncontended transition fail.
 	 */
+	==> Pending bits are cleared
 	if ((val & _Q_TAIL_MASK) == tail) {
+		==> If lock->val is not changed (still equals to val), set it as locked value and release.
 		if (atomic_try_cmpxchg_relaxed(&lock->val, &val, _Q_LOCKED_VAL))
 			goto release; /* No contention */
 	}
@@ -542,14 +567,17 @@ locked:
 	 * which will then detect the remaining tail and queue behind us
 	 * ensuring we'll see a @next.
 	 */
+	==> Set lock->locked as LOCKED value
 	set_locked(lock);
 
 	/*
 	 * contended path; wait for next if not observed yet, release.
 	 */
+	==> Pending flag is set, and then wait for @next comes.
 	if (!next)
 		next = smp_cond_load_relaxed(&node->next, (VAL));
 
+	==> smp_mb barrier() and write next->locked=1
 	arch_mcs_spin_unlock_contended(&next->locked);
 	pv_kick_node(lock, next);
 

@@ -27,6 +27,7 @@
 #define ___LOCK(lock) \
   do { __acquire(lock); (void)(lock); } while (0)
 
+==> For UP case, just disable preempt to allow the critical section running withput preemption
 #define __LOCK(lock) \
   do { preempt_disable(); ___LOCK(lock); } while (0)
 

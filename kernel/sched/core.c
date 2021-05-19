@@ -288,6 +288,7 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 	}
 #endif
 
+	==> //What's the difference between rq->clock_task and rq->clock?
 	rq->clock_task += delta;
 
 #ifdef CONFIG_HAVE_SCHED_AVG_IRQ
@@ -312,10 +313,12 @@ void update_rq_clock(struct rq *rq)
 	rq->clock_update_flags |= RQCF_UPDATED;
 #endif
 
+	==> Get clock and caculate delta from previous clock
 	delta = sched_clock_cpu(cpu_of(rq)) - rq->clock;
 	if (delta < 0)
 		return;
 	rq->clock += delta;
+	==> Update runqueue clock, providing scaled clock data in rq->clock_pelt
 	update_rq_clock_task(rq, delta);
 }
 
@@ -4343,9 +4346,11 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 	 * higher scheduling class, because otherwise those loose the
 	 * opportunity to pull in more work from other CPUs.
 	 */
+	==> The sched_class location is specified in include/asm-generic/vmlinux.lds.h
 	if (likely(prev->sched_class <= &fair_sched_class &&
 		   rq->nr_running == rq->cfs.h_nr_running)) {
 
+		==> Pick next task from fair class
 		p = pick_next_task_fair(rq, prev, rf);
 		if (unlikely(p == RETRY_TASK))
 			goto restart;
@@ -4426,12 +4431,17 @@ static void __sched notrace __schedule(bool preempt)
 
 	schedule_debug(prev, preempt);
 
+	==> Check schedule feature. All schedule features are defined in kernel/sched/features.h
+	==> //Is this feature configurabled for each platform?
 	if (sched_feat(HRTICK))
 		hrtick_clear(rq);
 
+	==> Local IRQ is disabled
 	local_irq_disable();
+	==> TODO: revisit here for RCU
 	rcu_note_context_switch(preempt);
 
+	==> TODO: Understand this race
 	/*
 	 * Make sure that signal_pending_state()->signal_pending() below
 	 * can't be reordered with __set_current_state(TASK_INTERRUPTIBLE)
@@ -4447,13 +4457,19 @@ static void __sched notrace __schedule(bool preempt)
 	 * Also, the membarrier system call requires a full memory barrier
 	 * after coming from user-space, before storing to rq->curr.
 	 */
+	==> spin on rq->lock
 	rq_lock(rq, &rf);
+	==> Only effect for ARM and RISCV
 	smp_mb__after_spinlock();
 
 	/* Promote REQ to ACT */
+	==> see definition in sched
+	==> Change previous request skip to act skip, to skip update_rq_clock.
+	==> It is requested previously in other places.
 	rq->clock_update_flags <<= 1;
 	update_rq_clock(rq);
 
+	==> nivcsw: Number of InVoluntary Context Switches
 	switch_count = &prev->nivcsw;
 
 	/*
@@ -4465,6 +4481,7 @@ static void __sched notrace __schedule(bool preempt)
 	 */
 	prev_state = prev->state;
 	if (!preempt && prev_state) {
+		==> Set prev state to RUNNING if there's pending signal to handle
 		if (signal_pending_state(prev_state, prev)) {
 			prev->state = TASK_RUNNING;
 		} else {
@@ -4473,6 +4490,7 @@ static void __sched notrace __schedule(bool preempt)
 				!(prev_state & TASK_NOLOAD) &&
 				!(prev->flags & PF_FROZEN);
 
+			==> TODO: the meaning of sched_contributes_to_load
 			if (prev->sched_contributes_to_load)
 				rq->nr_uninterruptible++;
 
@@ -4487,13 +4505,16 @@ static void __sched notrace __schedule(bool preempt)
 			 *
 			 * After this, schedule() must not care about p->state any more.
 			 */
+			==> Update on_rq flag, and remove prev from rq queue. There're several sched classes to select. TODO: revisit for sched class and on_rq.
 			deactivate_task(rq, prev, DEQUEUE_SLEEP | DEQUEUE_NOCLOCK);
 
+			==> per-task delay accounting
 			if (prev->in_iowait) {
 				atomic_inc(&rq->nr_iowait);
 				delayacct_blkio_start();
 			}
 		}
+		==> nvsw: Number of Voluntary Context Switches
 		switch_count = &prev->nvcsw;
 	}
 
@@ -4554,8 +4575,10 @@ void __noreturn do_task_dead(void)
 		cpu_relax();
 }
 
+==> do some work before sleep
 static inline void sched_submit_work(struct task_struct *tsk)
 {
+	==> If tsk is not RUNNING
 	if (!tsk->state)
 		return;
 
@@ -4569,6 +4592,7 @@ static inline void sched_submit_work(struct task_struct *tsk)
 	 */
 	if (tsk->flags & (PF_WQ_WORKER | PF_IO_WORKER)) {
 		preempt_disable();
+		==> Workqueue task choose next work to run, and select worker, and set that works's task as RUNNING.
 		if (tsk->flags & PF_WQ_WORKER)
 			wq_worker_sleeping(tsk);
 		else
@@ -4606,7 +4630,9 @@ asmlinkage __visible void __sched schedule(void)
 		preempt_disable();
 		__schedule(false);
 		sched_preempt_enable_no_resched();
+	==> If need reschedule flag is set, do schedule again.
 	} while (need_resched());
+	==> Callback to worker after resume from sleep
 	sched_update_worker(tsk);
 }
 EXPORT_SYMBOL(schedule);
