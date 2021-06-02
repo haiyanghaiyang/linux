@@ -176,6 +176,7 @@ int sysctl_sched_rt_runtime = 950000;
 /*
  * __task_rq_lock - lock the rq @p resides on.
  */
+==> Call rq_pin_lock. Before this, make sure task_on_rq_migrating is false, otherwise spins.
 struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
 	__acquires(rq->lock)
 {
@@ -4356,6 +4357,7 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 			goto restart;
 
 		/* Assumes fair_sched_class->next == idle_sched_class */
+		==> If cannot find next task to run, put prev task back to rb tree and pick idle next task
 		if (!p) {
 			put_prev_task(rq, prev);
 			p = pick_next_task_idle(rq);
@@ -4550,12 +4552,14 @@ static void __sched notrace __schedule(bool preempt)
 		trace_sched_switch(preempt, prev, next);
 
 		/* Also unlocks the rq: */
+		==> The real context switch
 		rq = context_switch(rq, prev, next, &rf);
 	} else {
 		rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
 		rq_unlock_irq(rq, &rf);
 	}
 
+	==> Call callback functions
 	balance_callback(rq);
 }
 
@@ -6990,6 +6994,7 @@ static void sched_rq_cpu_starting(unsigned int cpu)
 	struct rq *rq = cpu_rq(cpu);
 
 	rq->calc_load_update = calc_load_update;
+	==> Update max load balance interval based on online cpu number
 	update_max_interval();
 }
 
@@ -7050,6 +7055,7 @@ void __init sched_init_smp(void)
 	sched_smp_initialized = true;
 }
 
+==> Called on system boot
 static int __init migration_init(void)
 {
 	sched_cpu_starting(smp_processor_id());
