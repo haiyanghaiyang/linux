@@ -208,6 +208,7 @@ static void choose_new_asid(struct mm_struct *next, u64 next_tlb_gen,
 {
 	u16 asid;
 
+	==> If PCID (ASID) is unsupported, just flush tlb.
 	if (!static_cpu_has(X86_FEATURE_PCID)) {
 		*new_asid = 0;
 		*need_flush = true;
@@ -222,6 +223,7 @@ static void choose_new_asid(struct mm_struct *next, u64 next_tlb_gen,
 		    next->context.ctx_id)
 			continue;
 
+		==> If current task has asid assigned and it can be used, just use it and return.
 		*new_asid = asid;
 		*need_flush = (this_cpu_read(cpu_tlbstate.ctxs[asid].tlb_gen) <
 			       next_tlb_gen);
@@ -232,6 +234,8 @@ static void choose_new_asid(struct mm_struct *next, u64 next_tlb_gen,
 	 * We don't currently own an ASID slot on this CPU.
 	 * Allocate a slot.
 	 */
+	==> new_asid is canonical ASID, from 0 to 6.
+	==> cpu_tlbstate.next_asid is kernel ASID, from 1 to 7, which is actually stored in CR3.PCID.
 	*new_asid = this_cpu_add_return(cpu_tlbstate.next_asid, 1) - 1;
 	if (*new_asid >= TLB_NR_DYN_ASIDS) {
 		*new_asid = 0;
@@ -262,6 +266,8 @@ static inline void invalidate_user_asid(u16 asid)
 	if (!static_cpu_has(X86_FEATURE_PTI))
 		return;
 
+	==> Set bit of user_pcid_flush_mask which is used by SWITCH_TO_USER_CR3_NOSTACK
+	==> The invalidatation is deferred until switching to it in syscall or irq call, when SWITCH_TO_USER_CR3_STACK is called.
 	__set_bit(kern_pcid(asid),
 		  (unsigned long *)this_cpu_ptr(&cpu_tlbstate.user_pcid_flush_mask));
 }
@@ -478,7 +484,11 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 	 * storing to rq->curr. Writing to CR3 provides that full
 	 * memory barrier and core serializing instruction.
 	 */
+	==> Previous task is using same mm as next task
+	==> It could be from kernel task to user space task,
+	==> or from user space task to another user space task within same process with shared mm.
 	if (real_prev == next) {
+		==> Assert the ctx_id should be same
 		VM_WARN_ON(this_cpu_read(cpu_tlbstate.ctxs[prev_asid].ctx_id) !=
 			   next->context.ctx_id);
 
@@ -489,6 +499,7 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 		 */
 		if (WARN_ON_ONCE(real_prev != &init_mm &&
 				 !cpumask_test_cpu(cpu, mm_cpumask(next))))
+			==> Set current cpu bit into mm's cpumask
 			cpumask_set_cpu(cpu, mm_cpumask(next));
 
 		/*
@@ -533,16 +544,19 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 		if (real_prev != &init_mm) {
 			VM_WARN_ON_ONCE(!cpumask_test_cpu(cpu,
 						mm_cpumask(real_prev)));
+			==> Remove current cpu from previous mm cpu mask
 			cpumask_clear_cpu(cpu, mm_cpumask(real_prev));
 		}
 
 		/*
 		 * Start remote flushes and then read tlb_gen.
 		 */
+		==> Set current cpu on next mm cpu mask
 		if (next != &init_mm)
 			cpumask_set_cpu(cpu, mm_cpumask(next));
 		next_tlb_gen = atomic64_read(&next->context.tlb_gen);
 
+		==> ASID: https://stackoverflow.com/questions/52813239/how-many-bits-there-are-in-a-tlb-asid-tag-for-intel-processors-and-how-to-handl
 		choose_new_asid(next, next_tlb_gen, &new_asid, &need_flush);
 
 		/* Let nmi_uaccess_okay() know that we're changing CR3. */
@@ -551,8 +565,10 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 	}
 
 	if (need_flush) {
+		==> Update ctx_id and tlb_gen in cpu_tlbstate
 		this_cpu_write(cpu_tlbstate.ctxs[new_asid].ctx_id, next->context.ctx_id);
 		this_cpu_write(cpu_tlbstate.ctxs[new_asid].tlb_gen, next_tlb_gen);
+		==> invalidate tlb with new_asid and write next task page table and asic into cr3
 		load_new_mm_cr3(next->pgd, new_asid, true);
 
 		trace_tlb_flush(TLB_FLUSH_ON_TASK_SWITCH, TLB_FLUSH_ALL);

@@ -3560,6 +3560,7 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 	perf_event_task_sched_out(prev, next);
 	rseq_preempt(prev);
 	fire_sched_out_preempt_notifiers(prev, next);
+	==> Set next->on_cpu=1
 	prepare_task(next);
 	prepare_arch_switch(next);
 }
@@ -3733,7 +3734,7 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
  * context_switch - switch to the new MM and the new thread's register state.
  */
 static __always_inline struct rq *
-context_switch(struct rq *rq, struct task_struct *prev,
+conext_switch(struct rq *rq, struct task_struct *prev,
 	       struct task_struct *next, struct rq_flags *rf)
 {
 	prepare_task_switch(rq, prev, next);
@@ -3752,11 +3753,15 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	 * kernel ->   user   switch + mmdrop() active
 	 *   user ->   user   switch
 	 */
+	==> If mm is NULL, it is kernel task
+	==> Explanation of active_mm: https://www.kernel.org/doc/html/latest/vm/active_mm.html
 	if (!next->mm) {                                // to kernel
+		==> lazy means kernel task without own mm
 		enter_lazy_tlb(prev->active_mm, next);
 
 		next->active_mm = prev->active_mm;
 		if (prev->mm)                           // from user
+			==> Increase active_mm->mm_count which stands for lazy tasks on this mm
 			mmgrab(prev->active_mm);
 		else
 			prev->active_mm = NULL;
@@ -3770,11 +3775,14 @@ context_switch(struct rq *rq, struct task_struct *prev,
 		 * case 'prev->active_mm == next->mm' through
 		 * finish_task_switch()'s mmdrop().
 		 */
+		==> Switch from kernel mm to user mm with irq off
+		==> Need check whether tlb flush is required.
 		switch_mm_irqs_off(prev->active_mm, next->mm, next);
 
 		if (!prev->mm) {                        // from kernel
 			/* will mmdrop() in finish_task_switch(). */
 			rq->prev_mm = prev->active_mm;
+			==> restore kernel task active_mm to NULL
 			prev->active_mm = NULL;
 		}
 	}
