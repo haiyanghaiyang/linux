@@ -585,6 +585,7 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 	this_cpu_write(cpu_tlbstate.loaded_mm, next);
 	this_cpu_write(cpu_tlbstate.loaded_mm_asid, new_asid);
 
+	==> Switch IDT (Interrupt Table)
 	if (next != real_prev) {
 		cr4_update_pce_mm(next);
 		switch_ldt(real_prev, next);

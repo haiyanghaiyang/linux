@@ -187,6 +187,7 @@ struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
 	for (;;) {
 		rq = task_rq(p);
 		raw_spin_lock(&rq->lock);
+		==> //Why rq could be different from task_rq(p)?
 		if (likely(rq == task_rq(p) && !task_on_rq_migrating(p))) {
 			rq_pin_lock(rq, rf);
 			return rq;
@@ -3260,6 +3261,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 			p->static_prio = NICE_TO_PRIO(0);
 
 		p->prio = p->normal_prio = __normal_prio(p);
+		==> Convert prio to weight. If it is fair policy, do not update load.
 		set_load_weight(p, false);
 
 		/*
@@ -3269,6 +3271,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->sched_reset_on_fork = 0;
 	}
 
+	==> return if it is deadline priority
 	if (dl_prio(p->prio))
 		return -EAGAIN;
 	else if (rt_prio(p->prio))
@@ -3357,14 +3360,17 @@ void wake_up_new_task(struct task_struct *p)
 	 */
 	p->recent_used_cpu = task_cpu(p);
 	rseq_migrate(p);
+	==> Select cpu to run p and set that in p->cpu
 	__set_task_cpu(p, select_task_rq(p, task_cpu(p), SD_BALANCE_FORK, 0));
 #endif
 	rq = __task_rq_lock(p, &rf);
 	update_rq_clock(rq);
 	post_init_entity_util_avg(p);
 
+	==> enqueue task into run queue but do not update clock
 	activate_task(rq, p, ENQUEUE_NOCLOCK);
 	trace_sched_wakeup_new(p);
+	==> Prempt current task with new task
 	check_preempt_curr(rq, p, WF_FORK);
 #ifdef CONFIG_SMP
 	if (p->sched_class->task_woken) {
@@ -3792,6 +3798,7 @@ conext_switch(struct rq *rq, struct task_struct *prev,
 	prepare_lock_switch(rq, next, rf);
 
 	/* Here we just switch the register state and the stack. */
+	==> For x86, it calls __switch_to_asm
 	switch_to(prev, next, prev);
 	barrier();
 

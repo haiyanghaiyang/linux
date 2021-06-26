@@ -542,6 +542,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_DEBUG_ENTRY) &&
 		     this_cpu_read(irq_count) != -1);
 
+	==> Save cpu extended state into prev_fpu xsave/fxsave area
 	if (!test_thread_flag(TIF_NEED_FPU_LOAD))
 		switch_fpu_prepare(prev_fpu, cpu);
 
@@ -550,12 +551,14 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	 *
 	 * (e.g. xen_load_tls())
 	 */
+	==> Same fs and gs into prev_p task struct
 	save_fsgs(prev_p);
 
 	/*
 	 * Load TLS before restoring any segments so that segment loads
 	 * reference the correct GDT entries.
 	 */
+	==> Load TLS from thread next
 	load_TLS(next, cpu);
 
 	/*

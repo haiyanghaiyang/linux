@@ -247,6 +247,12 @@ SYM_FUNC_START(__switch_to_asm)
 	 * Save callee-saved registers
 	 * This must match the order in inactive_task_frame
 	 */
+	==> Push register of previous task
+	==> Why push these registers?
+	==> See https://en.wikipedia.org/wiki/X86_calling_conventions#Caller-saved_(volatile)_registers
+	==> The registers RBX, RBP, RDI, RSI, RSP, R12, R13, R14, and R15 are considered nonvolatile (callee-saved).
+	==> See PUSH_AND_CLEAR_REGS for caller saved registers
+	==> The schedule is called by schedule() call from yield task or irqentry_exit_cond_resched() when return from irq or syscall
 	pushq	%rbp
 	pushq	%rbx
 	pushq	%r12
@@ -274,6 +280,7 @@ SYM_FUNC_START(__switch_to_asm)
 	FILL_RETURN_BUFFER %r12, RSB_CLEAR_LOOPS, X86_FEATURE_RSB_CTXSW
 #endif
 
+	==> Pop register of next task
 	/* restore callee-saved registers */
 	popq	%r15
 	popq	%r14

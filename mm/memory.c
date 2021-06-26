@@ -592,11 +592,14 @@ static void print_bad_pte(struct vm_area_struct *vma, unsigned long addr,
  * PFNMAP mappings in order to support COWable mappings.
  *
  */
+==> https://blog.csdn.net/dean_gdp/article/details/103838810
 struct page *vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 			    pte_t pte)
 {
+	==> Get frame number of pte
 	unsigned long pfn = pte_pfn(pte);
 
+	==> Do not assoicate page for a special PTE
 	if (IS_ENABLED(CONFIG_ARCH_HAS_PTE_SPECIAL)) {
 		if (likely(!pte_special(pte)))
 			goto check_pfn;
@@ -622,6 +625,7 @@ struct page *vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 			goto out;
 		} else {
 			unsigned long off;
+			==> pte's pfn is same as frame number of addr
 			off = (addr - vma->vm_start) >> PAGE_SHIFT;
 			if (pfn == vma->vm_pgoff + off)
 				return NULL;
@@ -644,6 +648,7 @@ check_pfn:
 	 * eg. VDSO mappings can cause them to exist.
 	 */
 out:
+	==> Convert frame number to page (virtual) address
 	return pfn_to_page(pfn);
 }
 
@@ -827,12 +832,15 @@ copy_present_page(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	if (!new_page)
 		return -EAGAIN;
 
+	==> Set up page for dest pte and set that
+
 	/*
 	 * We have a prealloc page, all good!  Take it
 	 * over and copy the page & arm it.
 	 */
 	*prealloc = NULL;
 	copy_user_highpage(new_page, page, addr, vma);
+	==> Set up to date flag of new_page
 	__SetPageUptodate(new_page);
 	page_add_new_anon_rmap(new_page, new, addr, false);
 	lru_cache_add_inactive_or_unevictable(new_page, new);
@@ -859,10 +867,12 @@ copy_present_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	pte_t pte = *src_pte;
 	struct page *page;
 
+	==> Get page for source pte
 	page = vm_normal_page(vma, addr, pte);
 	if (page) {
 		int retval;
 
+		==> Copy pte by page
 		retval = copy_present_page(dst_mm, src_mm,
 			dst_pte, src_pte,
 			vma, new,
@@ -872,6 +882,7 @@ copy_present_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 			return retval;
 
 		get_page(page);
+		==> Increase mapcount of page
 		page_dup_rmap(page, false);
 		rss[mm_counter(page)]++;
 	}
@@ -978,6 +989,8 @@ again:
 			continue;
 		}
 		/* copy_present_pte() will clear `*prealloc' if consumed */
+		==> The first time, prealloc is not allocated. If it is required, ret is -EGAIN.
+		==> Then following code allocate it and goto "again".
 		ret = copy_present_pte(dst_mm, src_mm, dst_pte, src_pte,
 				       vma, new, addr, rss, &prealloc);
 		/*
@@ -986,6 +999,7 @@ again:
 		 */
 		if (unlikely(ret == -EAGAIN))
 			break;
+		==> //prealloc is allocated below, and the code goto "again" to reach here
 		if (unlikely(prealloc)) {
 			/*
 			 * pre-alloc page cannot be reused by next time so as
@@ -1145,11 +1159,13 @@ int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	if (is_vm_hugetlb_page(vma))
 		return copy_hugetlb_page_range(dst_mm, src_mm, vma);
 
+	==> pure frame mapping
 	if (unlikely(vma->vm_flags & VM_PFNMAP)) {
 		/*
 		 * We do not free on error cases below as remove_vma
 		 * gets called on error from higher level routine
 		 */
+		==>x86: reserve linear pfn with single reserve_png_range call
 		ret = track_pfn_copy(vma);
 		if (ret)
 			return ret;
@@ -1161,6 +1177,7 @@ int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * parent mm. And a permission downgrade will only happen if
 	 * is_cow_mapping() returns true.
 	 */
+	==> is_cow is true when vma is not shared but may write
 	is_cow = is_cow_mapping(vma->vm_flags);
 
 	if (is_cow) {

@@ -480,6 +480,7 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 		retval = -EINTR;
 		goto fail_uprobe_end;
 	}
+	==> flush all user cache
 	flush_cache_dup_mm(oldmm);
 	uprobe_dup_mmap(oldmm, mm);
 	/*
@@ -495,17 +496,22 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 	mm->exec_vm = oldmm->exec_vm;
 	mm->stack_vm = oldmm->stack_vm;
 
+	==> // initialize rb tree node?
 	rb_link = &mm->mm_rb.rb_node;
 	rb_parent = NULL;
 	pprev = &mm->mmap;
+	==> KSM: Kernel Same-page Merging
+	==> https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html
 	retval = ksm_fork(mm, oldmm);
 	if (retval)
 		goto out;
+	==> huge page: https://www.kernel.org/doc/Documentation/vm/hugetlbpage.txt
 	retval = khugepaged_fork(mm, oldmm);
 	if (retval)
 		goto out;
 
 	prev = NULL;
+	==> for all vm_area_struct in oldmm
 	for (mpnt = oldmm->mmap; mpnt; mpnt = mpnt->vm_next) {
 		struct file *file;
 
@@ -522,6 +528,7 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 			retval = -EINTR;
 			goto out;
 		}
+
 		if (mpnt->vm_flags & VM_ACCOUNT) {
 			unsigned long len = vma_pages(mpnt);
 
@@ -548,12 +555,14 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 			tmp->anon_vma = NULL;
 		} else if (anon_vma_fork(tmp, mpnt))
 			goto fail_nomem_anon_vma_fork;
+		==> clear the locked flag
 		tmp->vm_flags &= ~(VM_LOCKED | VM_LOCKONFAULT);
 		file = tmp->vm_file;
 		if (file) {
 			struct inode *inode = file_inode(file);
 			struct address_space *mapping = file->f_mapping;
 
+			==> increase f_count of file
 			get_file(file);
 			if (tmp->vm_flags & VM_DENYWRITE)
 				atomic_dec(&inode->i_writecount);
@@ -592,6 +601,7 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 		if (!(tmp->vm_flags & VM_WIPEONFORK))
 			retval = copy_page_range(mm, oldmm, mpnt, tmp);
 
+		==> call vm open operation
 		if (tmp->vm_ops && tmp->vm_ops->open)
 			tmp->vm_ops->open(tmp);
 
@@ -1404,6 +1414,7 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
 	vmacache_flush(tsk);
 
 	if (clone_flags & CLONE_VM) {
+		==> increase mm_users of oldmm
 		mmget(oldmm);
 		mm = oldmm;
 		goto good_mm;
@@ -1926,8 +1937,10 @@ static __latent_entropy struct task_struct *copy_process(
 	INIT_HLIST_NODE(&delayed.node);
 
 	spin_lock_irq(&current->sighand->siglock);
+	==> If child doesn't share the same thread group with parent, add current signal multiprocess into delayed list.
 	if (!(clone_flags & CLONE_THREAD))
 		hlist_add_head(&delayed.node, &current->signal->multiprocess);
+	==> Clear current thread's signal pending flag, if no signal pending and current thread is not freezing.
 	recalc_sigpending();
 	spin_unlock_irq(&current->sighand->siglock);
 	retval = -ERESTARTNOINTR;
@@ -1935,6 +1948,7 @@ static __latent_entropy struct task_struct *copy_process(
 		goto fork_out;
 
 	retval = -ENOMEM;
+	==> Duplicate task from current to p
 	p = dup_task_struct(current, node);
 	if (!p)
 		goto fork_out;
@@ -1960,6 +1974,7 @@ static __latent_entropy struct task_struct *copy_process(
 	DEBUG_LOCKS_WARN_ON(!p->softirqs_enabled);
 #endif
 	retval = -EAGAIN;
+	==> Abort if user processes number exceeds limit
 	if (atomic_read(&p->real_cred->user->processes) >=
 			task_rlimit(p, RLIMIT_NPROC)) {
 		if (p->real_cred->user != INIT_USER &&
@@ -1968,6 +1983,7 @@ static __latent_entropy struct task_struct *copy_process(
 	}
 	current->flags &= ~PF_NPROC_EXCEEDED;
 
+	==> Copy credentials
 	retval = copy_creds(p, clone_flags);
 	if (retval < 0)
 		goto bad_fork_free;
@@ -1983,6 +1999,7 @@ static __latent_entropy struct task_struct *copy_process(
 
 	delayacct_tsk_init(p);	/* Must remain after dup_task_struct() */
 	p->flags &= ~(PF_SUPERPRIV | PF_WQ_WORKER | PF_IDLE);
+	==> forked by didn't exec
 	p->flags |= PF_FORKNOEXEC;
 	INIT_LIST_HEAD(&p->children);
 	INIT_LIST_HEAD(&p->sibling);
@@ -2165,11 +2182,16 @@ static __latent_entropy struct task_struct *copy_process(
 	clear_tsk_latency_tracing(p);
 
 	/* ok, now we should be set up.. */
+	==> pid is the thread id
+	==> http://blog.chinaunix.net/uid-24774106-id-4065797.html
 	p->pid = pid_nr(pid);
 	if (clone_flags & CLONE_THREAD) {
+		==> Share same group leader in the thread group
 		p->group_leader = current->group_leader;
+		==> tgid is the thread group id
 		p->tgid = current->tgid;
 	} else {
+		==> Set itself as group leader
 		p->group_leader = p;
 		p->tgid = p->pid;
 	}
@@ -2223,6 +2245,7 @@ static __latent_entropy struct task_struct *copy_process(
 		p->exit_signal = args->exit_signal;
 	}
 
+	==> Copy patch state
 	klp_copy_process(p);
 
 	spin_lock(&current->sighand->siglock);
@@ -2233,6 +2256,7 @@ static __latent_entropy struct task_struct *copy_process(
 	 */
 	copy_seccomp(p);
 
+	==> Copy restartable sequences area
 	rseq_fork(p, clone_flags);
 
 	/* Don't start children in a dying pid namespace */
@@ -2465,10 +2489,13 @@ long _do_fork(struct kernel_clone_args *args)
 	 */
 	trace_sched_process_fork(current, p);
 
+	==> pid = p->thread_pid
 	pid = get_task_pid(p, PIDTYPE_PID);
+	==> Get local pid in name space
 	nr = pid_vnr(pid);
 
 	if (clone_flags & CLONE_PARENT_SETTID)
+		==> Copy nr to args->parent_tid which is in user space
 		put_user(nr, args->parent_tid);
 
 	if (clone_flags & CLONE_VFORK) {
@@ -2483,6 +2510,7 @@ long _do_fork(struct kernel_clone_args *args)
 	if (unlikely(trace))
 		ptrace_event_pid(trace, pid);
 
+	==> Wait for child task done for vfork
 	if (clone_flags & CLONE_VFORK) {
 		if (!wait_for_vfork_done(p, &vfork))
 			ptrace_event_pid(PTRACE_EVENT_VFORK_DONE, pid);
@@ -2516,6 +2544,7 @@ SYSCALL_DEFINE0(fork)
 		.exit_signal = SIGCHLD,
 	};
 
+	==> fork doesn't have CLONE_VM
 	return _do_fork(&args);
 #else
 	/* can not support in nommu mode */

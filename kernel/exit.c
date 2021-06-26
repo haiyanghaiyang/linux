@@ -737,6 +737,7 @@ void __noreturn do_exit(long code)
 	 */
 	force_uaccess_begin();
 
+	==> In atomic context
 	if (unlikely(in_atomic())) {
 		pr_info("note: %s[%d] exited with preempt_count %d\n",
 			current->comm, task_pid_nr(current),
@@ -769,6 +770,7 @@ void __noreturn do_exit(long code)
 		sync_mm_rss(tsk->mm);
 	acct_update_integrals(tsk);
 	group_dead = atomic_dec_and_test(&tsk->signal->live);
+	==> tsk->signal->live is zero
 	if (group_dead) {
 		/*
 		 * If the last thread of global init has exited, panic
@@ -850,6 +852,7 @@ void __noreturn do_exit(long code)
 	validate_creds_for_do_exit(tsk);
 
 	check_stack_usage();
+	==> disable preemption since this task will be scheduled out soon
 	preempt_disable();
 	if (tsk->nr_dirtied)
 		__this_cpu_add(dirty_throttle_leaks, tsk->nr_dirtied);
@@ -857,6 +860,7 @@ void __noreturn do_exit(long code)
 	exit_tasks_rcu_finish();
 
 	lockdep_free_task(tsk);
+	==> set task state as TASK_DEAD and schedule out and never return
 	do_task_dead();
 }
 EXPORT_SYMBOL_GPL(do_exit);
@@ -939,6 +943,7 @@ struct wait_opts {
 	int			notask_error;
 };
 
+==> filter pid
 static int eligible_pid(struct wait_opts *wo, struct task_struct *p)
 {
 	return	wo->wo_type == PIDTYPE_MAX ||
@@ -1151,6 +1156,7 @@ static int wait_task_stopped(struct wait_opts *wo,
 	if (!ptrace && !(wo->wo_flags & WUNTRACED))
 		return 0;
 
+	==> return exit code if sopped signal in task p
 	if (!task_stopped_code(p, ptrace))
 		return 0;
 
@@ -1161,6 +1167,7 @@ static int wait_task_stopped(struct wait_opts *wo,
 	if (unlikely(!p_code))
 		goto unlock_sig;
 
+	==> Get exit code of task p
 	exit_code = *p_code;
 	if (!exit_code)
 		goto unlock_sig;
@@ -1188,11 +1195,13 @@ unlock_sig:
 	sched_annotate_sleep();
 	if (wo->wo_rusage)
 		getrusage(p, RUSAGE_BOTH, wo->wo_rusage);
+	==> decrease ref count of p. If it is zero, free task struct of p
 	put_task_struct(p);
 
 	if (likely(!(wo->wo_flags & WNOWAIT)))
 		wo->wo_stat = (exit_code << 8) | 0x7f;
 
+	==> Collect information
 	infop = wo->wo_info;
 	if (infop) {
 		infop->cause = why;
@@ -1275,6 +1284,7 @@ static int wait_consider_task(struct wait_opts *wo, int ptrace,
 	if (unlikely(exit_state == EXIT_DEAD))
 		return 0;
 
+	==> filter eligible child, based on pid
 	ret = eligible_child(wo, ptrace, p);
 	if (!ret)
 		return ret;
@@ -1352,6 +1362,8 @@ static int wait_consider_task(struct wait_opts *wo, int ptrace,
 	 * Wait for stopped.  Depending on @ptrace, different stopped state
 	 * is used and the two don't interact with each other.
 	 */
+	==> return 0 for checking next task
+	==> Fetch exit code and other information into wo
 	ret = wait_task_stopped(wo, ptrace, p);
 	if (ret)
 		return ret;
@@ -1373,6 +1385,7 @@ static int wait_consider_task(struct wait_opts *wo, int ptrace,
  * ->notask_error is 0 if there were any eligible children,
  * or still -ECHILD.
  */
+==> return if find one thread to wait
 static int do_wait_thread(struct wait_opts *wo, struct task_struct *tsk)
 {
 	struct task_struct *p;
@@ -1457,12 +1470,15 @@ repeat:
 		if (retval)
 			goto end;
 
+		==> Don't wait on other thread of the group
 		if (wo->wo_flags & __WNOTHREAD)
 			break;
 	} while_each_thread(current, tsk);
 	read_unlock(&tasklist_lock);
 
 notask:
+	==> If there's eligible child but that child is not
+	==> stopped, just schedule out to wait and retry later.
 	retval = wo->notask_error;
 	if (!retval && !(wo->wo_flags & WNOHANG)) {
 		retval = -ERESTARTSYS;

@@ -1043,6 +1043,7 @@ static void __page_set_anon_rmap(struct page *page,
 
 	BUG_ON(!anon_vma);
 
+	==> Return is anonymous mapping is setup already
 	if (PageAnon(page))
 		return;
 
