@@ -2800,6 +2800,7 @@ static __always_inline void maybe_wipe_obj_freeptr(struct kmem_cache *s,
  *
  * Otherwise we can simply pick the next object from the lockless free list.
  */
+==> http://blog.chinaunix.net/uid-29291044-id-4196213.html
 static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 		gfp_t gfpflags, int node, unsigned long addr)
 {
@@ -2809,6 +2810,7 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	unsigned long tid;
 	struct obj_cgroup *objcg = NULL;
 
+	==> related to CONFIG_SLUB_DEBUG
 	s = slab_pre_alloc_hook(s, &objcg, 1, gfpflags);
 	if (!s)
 		return NULL;
@@ -2885,6 +2887,7 @@ redo:
 	if (unlikely(slab_want_init_on_alloc(gfpflags, s)) && object)
 		memset(object, 0, s->object_size);
 
+	==> related to CONFIG_SLUB_DEBUG
 	slab_post_alloc_hook(s, objcg, gfpflags, 1, &object);
 
 	return object;

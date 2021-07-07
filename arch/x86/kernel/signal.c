@@ -314,9 +314,11 @@ __setup_frame(int sig, struct ksignal *ksig, sigset_t *set,
 	if (!user_access_begin(frame, sizeof(*frame)))
 		return -EFAULT;
 
+	==> Copy kernel data into user space frame
 	unsafe_put_user(sig, &frame->sig, Efault);
 	unsafe_put_sigcontext(&frame->sc, fp, regs, set, Efault);
 	unsafe_put_user(set->sig[1], &frame->extramask[0], Efault);
+	==> Let user space signal handler return to kernel via sigreturn
 	if (current->mm->context.vdso)
 		restorer = current->mm->context.vdso +
 			vdso_image_32.sym___kernel_sigreturn;
@@ -505,6 +507,7 @@ static int __setup_rt_frame(int sig, struct ksignal *ksig,
 	if (unlikely(regs->ss != __USER_DS))
 		force_valid_ss(regs);
 
+	==> Switch to user space after return and come back with sigreturn
 	return 0;
 
 Efault:
@@ -881,6 +884,7 @@ COMPAT_SYSCALL_DEFINE0(x32_rt_sigreturn)
 	if (compat_restore_altstack(&frame->uc.uc_stack))
 		goto badframe;
 
+	==> returns to place that arch_do_signal is called in previous return from kernel to user space
 	return regs->ax;
 
 badframe:

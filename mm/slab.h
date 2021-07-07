@@ -509,9 +509,11 @@ static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
 
 	might_sleep_if(gfpflags_allow_blocking(flags));
 
+	==> fail injection
 	if (should_failslab(s, flags))
 		return NULL;
 
+	==> TODO: What is memcg?
 	if (memcg_kmem_enabled() &&
 	    ((flags & __GFP_ACCOUNT) || (s->flags & SLAB_ACCOUNT)))
 		*objcgp = memcg_slab_pre_alloc_hook(s, size, flags);

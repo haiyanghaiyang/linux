@@ -86,6 +86,7 @@ static bool sig_task_ignored(struct task_struct *t, int sig, bool force)
 	if (unlikely(is_global_init(t) && sig_kernel_only(sig)))
 		return true;
 
+	==> Ignore default handler for unkillable task, except by force in kernel
 	if (unlikely(t->signal->flags & SIGNAL_UNKILLABLE) &&
 	    handler == SIG_DFL && !(force && sig_kernel_only(sig)))
 		return true;
@@ -782,11 +783,15 @@ static void flush_sigqueue_mask(sigset_t *mask, struct sigpending *s)
 	struct sigqueue *q, *n;
 	sigset_t m;
 
+	==> m = mask & s->signal
 	sigandsets(&m, mask, &s->signal);
 	if (sigisemptyset(&m))
 		return;
 
+	==> s->signal = s->signal & ~mask
+	==> clear mask in s->signal
 	sigandnsets(&s->signal, &s->signal, mask);
+	==> remove signals from queue which is in mask
 	list_for_each_entry_safe(q, n, &s->list, list) {
 		if (sigismember(mask, q->info.si_signo)) {
 			list_del_init(&q->list);
@@ -834,6 +839,7 @@ static int check_kill_permission(int sig, struct kernel_siginfo *info,
 	if (!valid_signal(sig))
 		return -EINVAL;
 
+	==> Allow signal from kernel
 	if (!si_fromuser(info))
 		return 0;
 
@@ -858,6 +864,7 @@ static int check_kill_permission(int sig, struct kernel_siginfo *info,
 		}
 	}
 
+	==> Call task_kill hook to check permission
 	return security_task_kill(t, info, sig, NULL);
 }
 
@@ -903,6 +910,8 @@ static bool prepare_signal(int sig, struct task_struct *p, bool force)
 	struct task_struct *t;
 	sigset_t flush;
 
+	==> https://www.cnblogs.com/likaiming/p/8504987.html
+	==> The thread is being killed or core dump
 	if (signal->flags & (SIGNAL_GROUP_EXIT | SIGNAL_GROUP_COREDUMP)) {
 		if (!(signal->flags & SIGNAL_GROUP_EXIT))
 			return sig == SIGKILL;
@@ -1115,6 +1124,7 @@ static int __send_signal(int sig, struct kernel_siginfo *info, struct task_struc
 
 	q = __sigqueue_alloc(sig, t, GFP_ATOMIC, override_rlimit);
 	if (q) {
+		==> Add q at end of pending list of task t
 		list_add_tail(&q->list, &pending->list);
 		switch ((unsigned long) info) {
 		case (unsigned long) SEND_SIG_NOINFO:
@@ -1130,6 +1140,7 @@ static int __send_signal(int sig, struct kernel_siginfo *info, struct task_struc
 						 current_uid());
 			rcu_read_unlock();
 			break;
+		==> Signal sent from kernel
 		case (unsigned long) SEND_SIG_PRIV:
 			clear_siginfo(&q->info);
 			q->info.si_signo = sig;
@@ -1161,6 +1172,7 @@ static int __send_signal(int sig, struct kernel_siginfo *info, struct task_struc
 	}
 
 out_set:
+	==> Wakeup wait queue of t
 	signalfd_notify(t, sig);
 	sigaddset(&pending->signal, sig);
 
@@ -1447,6 +1459,7 @@ int kill_pid_info(int sig, struct kernel_siginfo *info, struct pid *pid)
 		if (p)
 			error = group_send_sig_info(sig, info, p, PIDTYPE_TGID);
 		rcu_read_unlock();
+		==> ESRCH: No such process
 		if (likely(!p || error != -ESRCH))
 			return error;
 
@@ -1567,12 +1580,14 @@ static int kill_something_info(int sig, struct kernel_siginfo *info, pid_t pid)
 
 	read_lock(&tasklist_lock);
 	if (pid != -1) {
+		==> Send to specified pid
 		ret = __kill_pgrp_info(sig, info,
 				pid ? find_vpid(-pid) : task_pgrp(current));
 	} else {
 		int retval = 0, count = 0;
 		struct task_struct * p;
 
+		==> kill pid=-1 means kill all process that you can kill
 		for_each_process(p) {
 			if (task_pid_vnr(p) > 1 &&
 					!same_thread_group(p, current)) {
@@ -3982,12 +3997,14 @@ int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 	k = &p->sighand->action[sig-1];
 
 	spin_lock_irq(&p->sighand->siglock);
+	==> Save old signal action
 	if (oact)
 		*oact = *k;
 
 	sigaction_compat_abi(act, oact);
 
 	if (act) {
+		==> Clear kill and stop signal mask of act
 		sigdelsetmask(&act->sa.sa_mask,
 			      sigmask(SIGKILL) | sigmask(SIGSTOP));
 		*k = *act;
@@ -4003,9 +4020,12 @@ int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 		 *   be discarded, whether or not it is blocked"
 		 */
 		if (sig_handler_ignored(sig_handler(p, sig), sig)) {
+			==> Clear mask and set sig
 			sigemptyset(&mask);
 			sigaddset(&mask, sig);
+			==> Remove shared pending signals in mask
 			flush_sigqueue_mask(&mask, &p->signal->shared_pending);
+			==> Remove pending signals in mask for all threads in same signal thread group of p
 			for_each_thread(p, t)
 				flush_sigqueue_mask(&mask, &t->pending);
 		}

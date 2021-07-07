@@ -539,6 +539,7 @@ static __always_inline void *kmalloc_large(size_t size, gfp_t flags)
  */
 static __always_inline void *kmalloc(size_t size, gfp_t flags)
 {
+	==> //Why different logic for constant size?
 	if (__builtin_constant_p(size)) {
 #ifndef CONFIG_SLOB
 		unsigned int index;
@@ -546,6 +547,8 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 		if (size > KMALLOC_MAX_CACHE_SIZE)
 			return kmalloc_large(size, flags);
 #ifndef CONFIG_SLOB
+		==> kmalloc prepared preallocated memory in different size, and find out index by the size
+		==> The preallocation is done in create_kmalloc_caches()
 		index = kmalloc_index(size);
 
 		if (!index)
