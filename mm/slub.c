@@ -304,6 +304,8 @@ static inline void set_freepointer(struct kmem_cache *s, void *object, void *fp)
 	BUG_ON(object == fp); /* naive detection of double free or corruption */
 #endif
 
+	==> The freeptr_addr points to a memory address. Put freeptr_addr into that memory.
+	==> *freeptr_addr = fp;
 	*(void **)freeptr_addr = freelist_ptr(s, fp, freeptr_addr);
 }
 
@@ -2146,6 +2148,8 @@ static void init_kmem_cache_cpus(struct kmem_cache *s)
 /*
  * Remove the cpu slab
  */
+==> freelist is cpu slab (c->freelist).
+==> Move per cpu freelist into page slab
 static void deactivate_slab(struct kmem_cache *s, struct page *page,
 				void *freelist, struct kmem_cache_cpu *c)
 {
@@ -2183,14 +2187,17 @@ static void deactivate_slab(struct kmem_cache *s, struct page *page,
 		if (freelist_corrupted(s, page, &freelist, nextfree))
 			break;
 
+		==> move freelist from cpu slab to head of page freelist
 		do {
 			prior = page->freelist;
 			counters = page->counters;
+			==> freelist[s->offset]=prior
 			set_freepointer(s, freelist, prior);
 			new.counters = counters;
 			new.inuse--;
 			VM_BUG_ON(!new.frozen);
 
+			==> page->freelist = freelist
 		} while (!__cmpxchg_double_slab(s, page,
 			prior, counters,
 			freelist, new.counters,
@@ -2684,6 +2691,7 @@ redo:
 			goto redo;
 		} else {
 			stat(s, ALLOC_NODE_MISMATCH);
+			==> move cpu freelist into page freelist
 			deactivate_slab(s, page, c->freelist, c);
 			goto new_slab;
 		}
@@ -2700,10 +2708,14 @@ redo:
 	}
 
 	/* must check again c->freelist in case of cpu migration or IRQ */
+	==> c->freelist is provided by kmalloc running in another cpu or IRQ,
+ 	==> then we needn't get freelist from s
+	==> Get freelist from cpu freelist
 	freelist = c->freelist;
 	if (freelist)
 		goto load_freelist;
 
+	==> Get freelist from page->freelist
 	freelist = get_freelist(s, page);
 
 	if (!freelist) {
@@ -2721,6 +2733,7 @@ load_freelist:
 	 * That page must be frozen for per cpu allocations to work.
 	 */
 	VM_BUG_ON(!c->page->frozen);
+	==> load into cpu freelist and increase transaction id
 	c->freelist = get_freepointer(s, freelist);
 	c->tid = next_tid(c->tid);
 	return freelist;
@@ -2800,6 +2813,7 @@ static __always_inline void maybe_wipe_obj_freeptr(struct kmem_cache *s,
  *
  * Otherwise we can simply pick the next object from the lockless free list.
  */
+==> https://ruffell.nz/programming/writeups/2019/02/15/looking-at-kmalloc-and-the-slub-memory-allocator.html
 ==> http://blog.chinaunix.net/uid-29291044-id-4196213.html
 static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 		gfp_t gfpflags, int node, unsigned long addr)
@@ -2825,6 +2839,8 @@ redo:
 	 * the same cpu. It could be different if CONFIG_PREEMPTION so we need
 	 * to check if it is matched or not.
 	 */
+	==> Loop to make sure only one thread on same cpu to enter following code to allocate object
+	==> Then the lock is avoided
 	do {
 		tid = this_cpu_read(s->cpu_slab->tid);
 		c = raw_cpu_ptr(s->cpu_slab);
@@ -2848,12 +2864,17 @@ redo:
 	 * linked list in between.
 	 */
 
+	==> get object and page from current cpu freelist
 	object = c->freelist;
 	page = c->page;
+	==> node_match: check node id when NUMA enabled
+	==> slow path
 	if (unlikely(!object || !page || !node_match(page, node))) {
 		object = __slab_alloc(s, gfpflags, node, addr, c);
 		stat(s, ALLOC_SLOWPATH);
 	} else {
+		==> quick path: next object is located at object + s->offset
+		==> //Needn't check size overflow?
 		void *next_object = get_freepointer_safe(s, object);
 
 		/*
@@ -2870,6 +2891,9 @@ redo:
 		 * against code executing on this cpu *not* from access by
 		 * other cpus.
 		 */
+		==> Move freelist to next_object, and tid to next_tid(tid), if freelist and tid is not changed due to SMP
+		==> If the freelist or tid is changed, it is probably switched to another thread for the same job. Need redo
+		==> and thhis avoid using lock.
 		if (unlikely(!this_cpu_cmpxchg_double(
 				s->cpu_slab->freelist, s->cpu_slab->tid,
 				object, tid,
@@ -2878,12 +2902,15 @@ redo:
 			note_cmpxchg_failure("slab_alloc", s, tid);
 			goto redo;
 		}
+		==> prefetch data (next_object + s->offset) into cache
+		==> //Why do prefetch?
 		prefetch_freepointer(s, next_object);
 		stat(s, ALLOC_FASTPATH);
 	}
 
 	maybe_wipe_obj_freeptr(s, object);
 
+	==> memset data to 0 if __GFP_ZERO is set
 	if (unlikely(slab_want_init_on_alloc(gfpflags, s)) && object)
 		memset(object, 0, s->object_size);
 
