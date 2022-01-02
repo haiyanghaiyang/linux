@@ -323,6 +323,7 @@ static inline unsigned int order_objects(unsigned int order, unsigned int size)
 static inline struct kmem_cache_order_objects oo_make(unsigned int order,
 		unsigned int size)
 {
+	==> save order of page numbers (PAGE<<order), and number of objects
 	struct kmem_cache_order_objects x = {
 		(order << OO_SHIFT) + order_objects(order, size)
 	};
@@ -1771,28 +1772,36 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 		stat(s, ORDER_FALLBACK);
 	}
 
+	==> number of object
 	page->objects = oo_objects(oo);
 
 	page->slab_cache = s;
+	==> //__SetPageSlab is not defined?
 	__SetPageSlab(page);
+	//system is under some pressure
 	if (page_is_pfmemalloc(page))
 		SetPageSlabPfmemalloc(page);
 
 	kasan_poison_slab(page);
 
+	==> get page virtual address and save in @start
 	start = page_address(page);
 
 	setup_page_debug(s, page, start);
 
+	//freelist random
 	shuffle = shuffle_freelist(s, page);
 
 	if (!shuffle) {
+		==> for debug
 		start = fixup_red_left(s, start);
+		==> kasan (kernel address sanitizer)
 		start = setup_object(s, page, start);
 		page->freelist = start;
 		for (idx = 0, p = start; idx < page->objects - 1; idx++) {
 			next = p + s->size;
 			next = setup_object(s, page, next);
+			==> Add link to next position: *(p + s->offset) = next
 			set_freepointer(s, p, next);
 			p = next;
 		}
@@ -2237,6 +2246,7 @@ redo:
 
 	new.frozen = 0;
 
+	==> Free page if number of partial larger than minimum partial
 	if (!new.inuse && n->nr_partial >= s->min_partial)
 		m = M_FREE;
 	else if (new.freelist) {
@@ -2413,6 +2423,8 @@ static void put_cpu_partial(struct kmem_cache *s, struct page *page, int drain)
 		page->pobjects = pobjects;
 		page->next = oldpage;
 
+		==> s->cpu_slab->partial = page
+		==> loop to gurantee s->cpu_slab->partial == oldpage before assignment
 	} while (this_cpu_cmpxchg(s->cpu_slab->partial, oldpage, page)
 								!= oldpage);
 	if (unlikely(!slub_cpu_partial(s))) {
@@ -2690,6 +2702,7 @@ redo:
 			node = NUMA_NO_NODE;
 			goto redo;
 		} else {
+			==> got page for other nodes
 			stat(s, ALLOC_NODE_MISMATCH);
 			==> move cpu freelist into page freelist
 			deactivate_slab(s, page, c->freelist, c);
@@ -2840,7 +2853,8 @@ redo:
 	 * to check if it is matched or not.
 	 */
 	==> Loop to make sure only one thread on same cpu to enter following code to allocate object
-	==> Then the lock is avoided
+	==> Then the lock is avoided with busy wait here.
+	==> When premption is enabled, the kmem_cache(s) maybe occupied by another cpu.
 	do {
 		tid = this_cpu_read(s->cpu_slab->tid);
 		c = raw_cpu_ptr(s->cpu_slab);
@@ -2893,7 +2907,9 @@ redo:
 		 */
 		==> Move freelist to next_object, and tid to next_tid(tid), if freelist and tid is not changed due to SMP
 		==> If the freelist or tid is changed, it is probably switched to another thread for the same job. Need redo
-		==> and thhis avoid using lock.
+		==> and this avoids using lock.
+		==> if ( s->cpu_slab->freelist==object) && (s->cpu_slab->tid==tid)
+		==> 	s->cpu_slab->freelist=next_object;s->cpu_slab->tid=next_tid(tid);
 		if (unlikely(!this_cpu_cmpxchg_double(
 				s->cpu_slab->freelist, s->cpu_slab->tid,
 				object, tid,
@@ -2906,6 +2922,7 @@ redo:
 		==> //Why do prefetch?
 		prefetch_freepointer(s, next_object);
 		stat(s, ALLOC_FASTPATH);
+		==> //Why not update object=next_object?
 	}
 
 	maybe_wipe_obj_freeptr(s, object);
@@ -3425,6 +3442,7 @@ static inline unsigned int slab_order(unsigned int size,
 	unsigned int min_order = slub_min_order;
 	unsigned int order;
 
+	==> If minium order contains too many objects, caculate new order based on object size.
 	if (order_objects(min_order, size) > MAX_OBJS_PER_PAGE)
 		return get_order(size * MAX_OBJS_PER_PAGE) - 1;
 
@@ -3436,6 +3454,7 @@ static inline unsigned int slab_order(unsigned int size,
 
 		rem = slab_size % size;
 
+		==> If extra (wasted) space is less than threshold, then use the order.
 		if (rem <= slab_size / fract_leftover)
 			break;
 	}
@@ -3467,6 +3486,8 @@ static inline int calculate_order(unsigned int size)
 		unsigned int fraction;
 
 		fraction = 16;
+		==> Try to get less left over with high fraction,
+		==> with order than slub_max_order
 		while (fraction >= 4) {
 			order = slab_order(size, min_objects,
 					slub_max_order, fraction);
@@ -3540,6 +3561,7 @@ static struct kmem_cache *kmem_cache_node;
  */
 static void early_kmem_cache_node_alloc(int node)
 {
+	==> defined in include/linux/mm_types.h
 	struct page *page;
 	struct kmem_cache_node *n;
 
@@ -3597,6 +3619,9 @@ static int init_kmem_cache_nodes(struct kmem_cache *s)
 {
 	int node;
 
+	==> An array node_states[N_NORMAL_MEMORY]
+	==> which represents the set of online nodes
+	==> in a system, one bit position per node number.
 	for_each_node_state(node, N_NORMAL_MEMORY) {
 		struct kmem_cache_node *n;
 
@@ -3604,6 +3629,8 @@ static int init_kmem_cache_nodes(struct kmem_cache *s)
 			early_kmem_cache_node_alloc(node);
 			continue;
 		}
+
+		==> kmem_cache_node is created by early alloc
 		n = kmem_cache_alloc_node(kmem_cache_node,
 						GFP_KERNEL, node);
 
@@ -3728,6 +3755,7 @@ static int calculate_sizes(struct kmem_cache *s, int forced_order)
 		 * freeptr_outside_object() function. If that is no
 		 * longer true, the function needs to be modified.
 		 */
+		==> put the pointer at end of the object
 		s->offset = size;
 		size += sizeof(void *);
 	} else if (freepointer_area > sizeof(void *)) {
@@ -3813,6 +3841,9 @@ static int kmem_cache_open(struct kmem_cache *s, slab_flags_t flags)
 	s->random = get_random_long();
 #endif
 
+	==> calculate object size, page order (minimal of order that PAGE<<order can put the object)
+	==> and then save order, number of objects in (PAGE<<order) into s->oo
+	==> return 0 if number of objects is 0.
 	if (!calculate_sizes(s, -1))
 		goto error;
 	if (disable_higher_order_debug) {

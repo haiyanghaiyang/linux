@@ -182,6 +182,7 @@ int slab_unmergeable(struct kmem_cache *s)
 	return 0;
 }
 
+==> Find whether current size/align can be merged with existing cache
 struct kmem_cache *find_mergeable(unsigned int size, unsigned int align,
 		slab_flags_t flags, const char *name, void (*ctor)(void *))
 {
@@ -337,6 +338,7 @@ kmem_cache_create_usercopy(const char *name,
 	    WARN_ON(size < usersize || size - usersize < useroffset))
 		usersize = useroffset = 0;
 
+	==> Find whether existing cache can support this size/align.
 	if (!usersize)
 		s = __kmem_cache_alias(name, size, align, flags, ctor);
 	if (s)
@@ -348,6 +350,7 @@ kmem_cache_create_usercopy(const char *name,
 		goto out_unlock;
 	}
 
+	==> Cannot find existing cache, and need create a new one
 	s = create_cache(cache_name, size,
 			 calculate_alignment(flags, align, size),
 			 flags, useroffset, usersize, ctor, NULL);
