@@ -1608,12 +1608,14 @@ static void *setup_object(struct kmem_cache *s, struct page *page,
 /*
  * Slab allocation and freeing
  */
+==> Allocate page from buddy allocator
 static inline struct page *alloc_slab_page(struct kmem_cache *s,
 		gfp_t flags, int node, struct kmem_cache_order_objects oo)
 {
 	struct page *page;
 	unsigned int order = oo_order(oo);
 
+	==> Allocate 2^order pages
 	if (node == NUMA_NO_NODE)
 		page = alloc_pages(flags, order);
 	else
@@ -1734,6 +1736,7 @@ static inline bool shuffle_freelist(struct kmem_cache *s, struct page *page)
 }
 #endif /* CONFIG_SLAB_FREELIST_RANDOM */
 
+==> Allocate 2^order pages, setup freelist list
 static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 {
 	struct page *page;
@@ -1760,6 +1763,7 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	page = alloc_slab_page(s, alloc_gfp, node, oo);
 	if (unlikely(!page)) {
+		==> Try to allocate again with minimal pages
 		oo = s->min;
 		alloc_gfp = flags;
 		/*
@@ -1910,6 +1914,7 @@ static inline void remove_partial(struct kmem_cache_node *n,
  *
  * Returns a list of objects or NULL if it fails.
  */
+==> remove @page from node @n, and return freelist of the page
 static inline void *acquire_slab(struct kmem_cache *s,
 		struct kmem_cache_node *n, struct page *page,
 		int mode, int *objects)
@@ -1927,6 +1932,8 @@ static inline void *acquire_slab(struct kmem_cache *s,
 	 */
 	freelist = page->freelist;
 	counters = page->counters;
+	==> new.objects and new.inuse are initialized with counters assigned
+	==> as they are covered by counters with union
 	new.counters = counters;
 	*objects = new.objects - new.inuse;
 	if (mode) {
@@ -1945,6 +1952,7 @@ static inline void *acquire_slab(struct kmem_cache *s,
 			"acquire_slab"))
 		return NULL;
 
+	==> Remove page from partial list of node
 	remove_partial(n, page);
 	WARN_ON(!freelist);
 	return freelist;
@@ -2578,6 +2586,7 @@ slab_out_of_memory(struct kmem_cache *s, gfp_t gfpflags, int nid)
 #endif
 }
 
+==> return current freelist of allocated page
 static inline void *new_slab_objects(struct kmem_cache *s, gfp_t flags,
 			int node, struct kmem_cache_cpu **pc)
 {
@@ -2587,6 +2596,7 @@ static inline void *new_slab_objects(struct kmem_cache *s, gfp_t flags,
 
 	WARN_ON_ONCE(s->ctor && (flags & __GFP_ZERO));
 
+	==> Try to get object from node partial
 	freelist = get_partial(s, flags, node, c);
 
 	if (freelist)
@@ -2594,6 +2604,7 @@ static inline void *new_slab_objects(struct kmem_cache *s, gfp_t flags,
 
 	page = new_slab(s, flags, node);
 	if (page) {
+		==> Link page to kmem_cache_cpu
 		c = raw_cpu_ptr(s->cpu_slab);
 		if (c->page)
 			flush_slab(s, c);
@@ -2746,20 +2757,24 @@ load_freelist:
 	 * That page must be frozen for per cpu allocations to work.
 	 */
 	VM_BUG_ON(!c->page->frozen);
-	==> load into cpu freelist and increase transaction id
+	==> move to next freelist and increase transaction id
 	c->freelist = get_freepointer(s, freelist);
 	c->tid = next_tid(c->tid);
 	return freelist;
 
 new_slab:
 
+	==> Both c->freelist and page->freelist are empty now.
+	==> Move to next page in partial list if it is not empty
 	if (slub_percpu_partial(c)) {
 		page = c->page = slub_percpu_partial(c);
+		==> c->partial = page->next
 		slub_set_percpu_partial(c, page);
 		stat(s, CPU_PARTIAL_ALLOC);
 		goto redo;
 	}
 
+	==> allocate page from buddy system and link to kmem_cache_node
 	freelist = new_slab_objects(s, gfpflags, node, &c);
 
 	if (unlikely(!freelist)) {
@@ -2776,6 +2791,7 @@ new_slab:
 			!alloc_debug_processing(s, page, freelist, addr))
 		goto new_slab;	/* Slab failed checks. Next slab needed */
 
+	==> Move c->freelist to page->freelist
 	deactivate_slab(s, page, get_freepointer(s, freelist), c);
 	return freelist;
 }
