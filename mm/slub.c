@@ -2166,7 +2166,7 @@ static void init_kmem_cache_cpus(struct kmem_cache *s)
  * Remove the cpu slab
  */
 ==> freelist is cpu slab (c->freelist).
-==> Move per cpu freelist into page slab
+==> Move freelist (per cpu freelist) into page
 static void deactivate_slab(struct kmem_cache *s, struct page *page,
 				void *freelist, struct kmem_cache_cpu *c)
 {
@@ -2208,7 +2208,7 @@ static void deactivate_slab(struct kmem_cache *s, struct page *page,
 		do {
 			prior = page->freelist;
 			counters = page->counters;
-			==> freelist[s->offset]=prior
+			==> freelist[s->offset]=prior=page->freelist
 			set_freepointer(s, freelist, prior);
 			new.counters = counters;
 			new.inuse--;
@@ -2715,7 +2715,7 @@ redo:
 		} else {
 			==> got page for other nodes
 			stat(s, ALLOC_NODE_MISMATCH);
-			==> move cpu freelist into page freelist
+			==> move s->freelist into page freelist
 			deactivate_slab(s, page, c->freelist, c);
 			goto new_slab;
 		}
@@ -2733,7 +2733,7 @@ redo:
 
 	/* must check again c->freelist in case of cpu migration or IRQ */
 	==> c->freelist is provided by kmalloc running in another cpu or IRQ,
- 	==> then we needn't get freelist from s
+ 	==> then we need not get freelist from s
 	==> Get freelist from cpu freelist
 	freelist = c->freelist;
 	if (freelist)
@@ -2743,6 +2743,7 @@ redo:
 	freelist = get_freelist(s, page);
 
 	if (!freelist) {
+		==> No more free object in page->freelist
 		c->page = NULL;
 		stat(s, DEACTIVATE_BYPASS);
 		goto new_slab;
@@ -2764,9 +2765,9 @@ load_freelist:
 
 new_slab:
 
-	==> Both c->freelist and page->freelist are empty now.
+	==> The c->freelist is empty now. The page->freelist is either empty or cannot be used.
 	==> Move to next page in partial list if it is not empty
-	if (slub_percpu_partial(c)) {
+	if (slub_percpu_partial(c)) { ==> slub_percpu_partial(c) is c->patial
 		page = c->page = slub_percpu_partial(c);
 		==> c->partial = page->next
 		slub_set_percpu_partial(c, page);
@@ -2791,7 +2792,8 @@ new_slab:
 			!alloc_debug_processing(s, page, freelist, addr))
 		goto new_slab;	/* Slab failed checks. Next slab needed */
 
-	==> Move c->freelist to page->freelist
+	==> Move s->freelist to page->freelist
+	==> Why deactive slab?
 	deactivate_slab(s, page, get_freepointer(s, freelist), c);
 	return freelist;
 }
