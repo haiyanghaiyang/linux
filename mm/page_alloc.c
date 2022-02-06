@@ -889,7 +889,9 @@ static inline void del_page_from_free_list(struct page *page, struct zone *zone,
 	if (page_reported(page))
 		__ClearPageReported(page);
 
+	==> remove page from lru list
 	list_del(&page->lru);
+	==> remove page from buddy system
 	__ClearPageBuddy(page);
 	set_page_private(page, 0);
 	zone->free_area[order].nr_free--;
@@ -2120,6 +2122,7 @@ static inline void expand(struct zone *zone, struct page *page,
 		if (set_page_guard(zone, &page[size], high, migratetype))
 			continue;
 
+		==> Add page+2*(high-1) into zone->free_area[order]->free_list[migratetype]
 		add_to_free_list(&page[size], zone, high, migratetype);
 		set_page_order(&page[size], high);
 	}
@@ -2262,6 +2265,8 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 		if (!page)
 			continue;
 		del_page_from_free_list(page, zone, current_order);
+		==> If allocate page from higher order than current_order,
+		==> add extra pages into freelist.
 		expand(zone, page, order, current_order, migratetype);
 		set_pcppage_migratetype(page, migratetype);
 		return page;
@@ -2806,6 +2811,7 @@ retry:
 		if (alloc_flags & ALLOC_CMA)
 			page = __rmqueue_cma_fallback(zone, order);
 
+		==> steal free pages from other migrate type and then retry
 		if (!page && __rmqueue_fallback(zone, order, migratetype,
 								alloc_flags))
 			goto retry;
@@ -3318,6 +3324,7 @@ static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 
 	do {
 		if (list_empty(list)) {
+			==> allocate pcp->batch pages from buddy system
 			pcp->count += rmqueue_bulk(zone, 0,
 					pcp->batch, list,
 					migratetype, alloc_flags);
@@ -3325,6 +3332,7 @@ static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 				return NULL;
 		}
 
+		==> take first entry of list (page->lru) as allocated page
 		page = list_first_entry(list, struct page, lru);
 		list_del(&page->lru);
 		pcp->count--;
@@ -3372,6 +3380,7 @@ struct page *rmqueue(struct zone *preferred_zone,
 		 * MIGRATE_MOVABLE pcplist could have the pages on CMA area and
 		 * we need to skip it when CMA area isn't allowed.
 		 */
+		==> Allocate free page from per cpu list
 		if (!IS_ENABLED(CONFIG_CMA) || alloc_flags & ALLOC_CMA ||
 				migratetype != MIGRATE_MOVABLE) {
 			page = rmqueue_pcplist(preferred_zone, zone, gfp_flags,
@@ -3741,6 +3750,7 @@ retry:
 	 */
 	no_fallback = alloc_flags & ALLOC_NOFRAGMENT;
 	z = ac->preferred_zoneref;
+	==> for each zone less than highest zone index
 	for_next_zone_zonelist_nodemask(zone, z, ac->zonelist,
 					ac->highest_zoneidx, ac->nodemask) {
 		struct page *page;
@@ -3773,6 +3783,7 @@ retry:
 			if (last_pgdat_dirty_limit == zone->zone_pgdat)
 				continue;
 
+			==> save zone exceeds dirty limit
 			if (!node_dirty_ok(zone->zone_pgdat)) {
 				last_pgdat_dirty_limit = zone->zone_pgdat;
 				continue;
@@ -3796,6 +3807,7 @@ retry:
 		}
 
 		mark = wmark_pages(zone, alloc_flags & ALLOC_WMARK_MASK);
+		==> Whether freepages larger than watermark
 		if (!zone_watermark_fast(zone, order, mark,
 				       ac->highest_zoneidx, alloc_flags,
 				       gfp_mask)) {
@@ -4009,6 +4021,7 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 		goto out;
 
 	/* Exhausted what can be done so it's blame time */
+	==> out_of_memory: oom killer
 	if (out_of_memory(&oc) || WARN_ON_ONCE(gfp_mask & __GFP_NOFAIL)) {
 		*did_some_progress = 1;
 
@@ -4813,12 +4826,14 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 		struct alloc_context *ac, gfp_t *alloc_mask,
 		unsigned int *alloc_flags)
 {
+	==> get zone type determined by the combination specified in the gfp_mask
 	ac->highest_zoneidx = gfp_zone(gfp_mask);
 	ac->zonelist = node_zonelist(preferred_nid, gfp_mask);
 	ac->nodemask = nodemask;
 	ac->migratetype = gfp_migratetype(gfp_mask);
 
 	if (cpusets_enabled()) {
+		==> __GFP_HARDWALL enforces the cpuset memory allocation policy
 		*alloc_mask |= __GFP_HARDWALL;
 		/*
 		 * When we are in the interrupt context, it is irrelevant
@@ -4830,11 +4845,14 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 			*alloc_flags |= ALLOC_CPUSET;
 	}
 
+	==> //What does these mean?
 	fs_reclaim_acquire(gfp_mask);
 	fs_reclaim_release(gfp_mask);
 
+	==> Add atomic sleep notation
 	might_sleep_if(gfp_mask & __GFP_DIRECT_RECLAIM);
 
+	==> sanity check whether alloc page should fail
 	if (should_fail_alloc_page(gfp_mask, order))
 		return false;
 
@@ -4854,6 +4872,7 @@ static inline void finalise_ac(gfp_t gfp_mask, struct alloc_context *ac)
 	 * also used as the starting point for the zonelist iterator. It
 	 * may get reset for allocations that ignore memory policies.
 	 */
+	==> start search from the first zone less than highest zoneindex
 	ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->highest_zoneidx, ac->nodemask);
 }
@@ -8309,6 +8328,7 @@ struct page *has_unmovable_pages(struct zone *zone, struct page *page,
 		 * because their page->_refcount is zero at all time.
 		 */
 		if (!page_ref_count(page)) {
+			==> PageBuddy is defined in include/linux/page-flag.h
 			if (PageBuddy(page))
 				iter += (1 << page_order(page)) - 1;
 			continue;

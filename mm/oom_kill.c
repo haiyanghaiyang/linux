@@ -338,6 +338,7 @@ static int oom_evaluate_task(struct task_struct *task, void *arg)
 		goto select;
 	}
 
+	==> high memory usage task has high points to be killed
 	points = oom_badness(task, oc->totalpages);
 	if (points == LONG_MIN || points < oc->chosen_points)
 		goto next;
@@ -510,6 +511,7 @@ static DECLARE_WAIT_QUEUE_HEAD(oom_reaper_wait);
 static struct task_struct *oom_reaper_list;
 static DEFINE_SPINLOCK(oom_reaper_lock);
 
+==> unmap vma of mm
 bool __oom_reap_task_mm(struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
@@ -666,10 +668,12 @@ static void wake_oom_reaper(struct task_struct *tsk)
 	get_task_struct(tsk);
 
 	spin_lock(&oom_reaper_lock);
+	==> add tsk into reaper list
 	tsk->oom_reaper_list = oom_reaper_list;
 	oom_reaper_list = tsk;
 	spin_unlock(&oom_reaper_lock);
 	trace_wake_reaper(tsk->pid);
+	==> wake up reaper task
 	wake_up(&oom_reaper_wait);
 }
 
@@ -705,6 +709,7 @@ static void mark_oom_victim(struct task_struct *tsk)
 		return;
 
 	/* oom_mm is bound to the signal struct life time. */
+	==> tsk->signal->oom_mm = mm
 	if (!cmpxchg(&tsk->signal->oom_mm, NULL, mm)) {
 		mmgrab(tsk->signal->oom_mm);
 		set_bit(MMF_OOM_VICTIM, &mm->flags);
@@ -832,6 +837,7 @@ static bool task_will_free_mem(struct task_struct *task)
 	if (test_bit(MMF_OOM_SKIP, &mm->flags))
 		return false;
 
+	==> Only one task (thread) for the mm
 	if (atomic_read(&mm->mm_users) <= 1)
 		return true;
 
@@ -1088,6 +1094,7 @@ bool out_of_memory(struct oom_control *oc)
 		oc->nodemask = NULL;
 	check_panic_on_oom(oc);
 
+	==> kill current task for oom
 	if (!is_memcg_oom(oc) && sysctl_oom_kill_allocating_task &&
 	    current->mm && !oom_unkillable_task(current) &&
 	    oom_cpuset_eligible(current, oc) &&
