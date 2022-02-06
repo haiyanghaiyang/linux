@@ -3045,12 +3045,14 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 		}
 		prior = page->freelist;
 		counters = page->counters;
+		==> tail --> prior
 		set_freepointer(s, tail, prior);
 		new.counters = counters;
 		was_frozen = new.frozen;
 		new.inuse -= cnt;
 		if ((!new.inuse || !prior) && !was_frozen) {
 
+			==> page->freelist is NULL, which means not freelist inside
 			if (kmem_cache_has_cpu_partial(s) && !prior) {
 
 				/*
@@ -3076,7 +3078,7 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 
 			}
 		}
-
+		==> page->freelist = head
 	} while (!cmpxchg_double_slab(s, page,
 		prior, counters,
 		head, new.counters,
@@ -3088,6 +3090,8 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 		 * If we just froze the page then put it onto the
 		 * per cpu partial list.
 		 */
+		==> A slab which was fully allocated and then unfrozen.
+		==> This is first object freed on the slab, and put it at cpu partial list.
 		if (new.frozen && !was_frozen) {
 			put_cpu_partial(s, page, 1);
 			stat(s, CPU_PARTIAL_FREE);
@@ -3101,6 +3105,8 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 		return;
 	}
 
+	==> All object are freed and number of partial exceeds
+	==> the minimal partial number, just free the slab.
 	if (unlikely(!new.inuse && n->nr_partial >= s->min_partial))
 		goto slab_empty;
 
@@ -3108,6 +3114,7 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
 	 * Objects left in the slab. If it was not on the partial list before
 	 * then add it.
 	 */
+	==> Add slab in node slab list, if this is the first object freed, and cpu has not partial list.
 	if (!kmem_cache_has_cpu_partial(s) && unlikely(!prior)) {
 		remove_full(s, n, page);
 		add_partial(n, page, DEACTIVATE_TO_TAIL);
