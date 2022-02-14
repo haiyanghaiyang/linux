@@ -1094,9 +1094,11 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 		page = lru_to_page(page_list);
 		list_del(&page->lru);
 
+		==> goto keep if the page is already locked
 		if (!trylock_page(page))
 			goto keep;
 
+		==> This page should not be active.
 		VM_BUG_ON_PAGE(PageActive(page), page);
 
 		nr_pages = compound_nr(page);
@@ -1104,12 +1106,15 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 		/* Account the number of base pages even though THP */
 		sc->nr_scanned += nr_pages;
 
+		==> this page cannot be evicted
 		if (unlikely(!page_evictable(page)))
 			goto activate_locked;
 
+		==> the page is mapped and cannot be unmapped
 		if (!sc->may_unmap && page_mapped(page))
 			goto keep_locked;
 
+		==> Whether file system may be entered
 		may_enter_fs = (sc->gfp_mask & __GFP_FS) ||
 			(PageSwapCache(page) && (sc->gfp_mask & __GFP_IO));
 
@@ -1460,6 +1465,8 @@ activate_locked_split:
 			nr_pages = 1;
 		}
 activate_locked:
+		==> The page is in swap cache but it is inevitable. Then
+		==> set it as active.
 		/* Not a candidate for swapping, so reclaim swap space. */
 		if (PageSwapCache(page) && (mem_cgroup_swap_full(page) ||
 						PageMlocked(page)))
@@ -1663,14 +1670,17 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 	while (scan < nr_to_scan && !list_empty(src)) {
 		struct page *page;
 
+		==> get page from tail of src
 		page = lru_to_page(src);
 		prefetchw_prev_lru_page(page, src, flags);
 
 		VM_BUG_ON_PAGE(!PageLRU(page), page);
 
+		==> Caculate pages in compound page. The first page is head, for compound page
 		nr_pages = compound_nr(page);
 		total_scan += nr_pages;
 
+		==> Move pages into skipped group if zone number exceeds relaim index
 		if (page_zonenum(page) > sc->reclaim_idx) {
 			list_move(&page->lru, &pages_skipped);
 			nr_skipped[page_zonenum(page)] += nr_pages;
@@ -1688,15 +1698,18 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 		 * only when the page is being freed somewhere else.
 		 */
 		scan += nr_pages;
+		==> try to clear LRU flag from page, return 0 for success
 		switch (__isolate_lru_page(page, mode)) {
 		case 0:
 			nr_taken += nr_pages;
 			nr_zone_taken[page_zonenum(page)] += nr_pages;
+			==> move page to dst
 			list_move(&page->lru, dst);
 			break;
 
 		case -EBUSY:
 			/* else it is being freed elsewhere */
+			==> move page back to src
 			list_move(&page->lru, src);
 			continue;
 
@@ -1727,6 +1740,7 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 	*nr_scanned = total_scan;
 	trace_mm_vmscan_lru_isolate(sc->reclaim_idx, sc->order, nr_to_scan,
 				    total_scan, skipped, nr_taken, mode, lru);
+	==> update lru stat information
 	update_lru_sizes(lruvec, lru, nr_zone_taken);
 	return nr_taken;
 }
@@ -1941,6 +1955,7 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 
 	spin_lock_irq(&pgdat->lru_lock);
 
+	==> move pages from lruvec->lists[lru] to page_list
 	nr_taken = isolate_lru_pages(nr_to_scan, lruvec, &page_list,
 				     &nr_scanned, sc, lru);
 
@@ -2025,6 +2040,7 @@ static void shrink_active_list(unsigned long nr_to_scan,
 
 	spin_lock_irq(&pgdat->lru_lock);
 
+	==> move pages from lruvec->lists[lru] to l_hold
 	nr_taken = isolate_lru_pages(nr_to_scan, lruvec, &l_hold,
 				     &nr_scanned, sc, lru);
 
@@ -2065,6 +2081,7 @@ static void shrink_active_list(unsigned long nr_to_scan,
 			 * IO, plus JVM can create lots of anon VM_EXEC pages,
 			 * so we ignore them here.
 			 */
+			==> put page back into active list
 			if ((vm_flags & VM_EXEC) && page_is_file_lru(page)) {
 				nr_rotated += thp_nr_pages(page);
 				list_add(&page->lru, &l_active);
@@ -2074,6 +2091,7 @@ static void shrink_active_list(unsigned long nr_to_scan,
 
 		ClearPageActive(page);	/* we are de-activating */
 		SetPageWorkingset(page);
+		==> Add page into inactive list
 		list_add(&page->lru, &l_inactive);
 	}
 
@@ -2431,6 +2449,7 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
 	struct blk_plug plug;
 	bool scan_adjusted;
 
+	==> get nr[] for each lru
 	get_scan_count(lruvec, sc, nr);
 
 	/* Record the original scan target for proportional adjustments later */
@@ -2468,6 +2487,7 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
 
 		cond_resched();
 
+		==> Need reclaim more
 		if (nr_reclaimed < nr_to_reclaim || scan_adjusted)
 			continue;
 
@@ -2690,6 +2710,7 @@ again:
 	 * Target desirable inactive:active list ratios for the anon
 	 * and file LRU lists.
 	 */
+	==> update sc->may_deactivate
 	if (!sc->force_deactivate) {
 		unsigned long refaults;
 
@@ -2920,7 +2941,9 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 		 * Take care memory controller reclaiming has small influence
 		 * to global LRU.
 		 */
+		==> cgroup_reclaim is not determined
 		if (!cgroup_reclaim(sc)) {
+			==> whether this zone is allowed
 			if (!cpuset_zone_allowed(zone,
 						 GFP_KERNEL | __GFP_HARDWALL))
 				continue;
@@ -3024,6 +3047,7 @@ retry:
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
 				sc->priority);
 		sc->nr_scanned = 0;
+		==> reclaim pages
 		shrink_zones(zonelist, sc);
 
 		if (sc->nr_reclaimed >= sc->nr_to_reclaim)
