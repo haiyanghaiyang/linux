@@ -434,6 +434,7 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 
 	mm->pgd = pgd;
 
+    ==> allocate pages for pmds and user pmds
 	if (preallocate_pmds(mm, pmds, PREALLOCATED_PMDS) != 0)
 		goto out_free_pgd;
 
@@ -450,6 +451,7 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 	 */
 	spin_lock(&pgd_lock);
 
+    ==> copy shared pgd if it is, and add pgd into pgd_list
 	pgd_ctor(mm, pgd);
 	pgd_prepopulate_pmd(mm, pgd, pmds);
 	pgd_prepopulate_user_pmd(mm, pgd, u_pmds);

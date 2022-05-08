@@ -415,6 +415,7 @@ static inline int node_state(int node, enum node_states state)
 	return node_isset(node, node_states[state]);
 }
 
+==> Each state has a dedicated node mask. Just set current node in related state's node mask
 static inline void node_set_state(int node, enum node_states state)
 {
 	__node_set(node, &node_states[state]);

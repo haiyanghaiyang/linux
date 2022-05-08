@@ -520,6 +520,7 @@ static void __init_memblock memblock_merge_regions(struct memblock_type *type)
 		    memblock_get_region_node(this) !=
 		    memblock_get_region_node(next) ||
 		    this->flags != next->flags) {
+			==> overflow
 			BUG_ON(this->base + this->size > next->base);
 			i++;
 			continue;
@@ -610,6 +611,7 @@ repeat:
 	base = obase;
 	nr_new = 0;
 
+	==> Add regions for non-overlay area
 	for_each_memblock_type(idx, type, rgn) {
 		phys_addr_t rbase = rgn->base;
 		phys_addr_t rend = rbase + rgn->size;
@@ -769,6 +771,7 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 					       memblock_get_region_node(rgn),
 					       rgn->flags);
 		} else {
+			==> region idx is in range base..end. So this region will be removed.
 			/* @rgn is fully contained, record it */
 			if (!*end_rgn)
 				*start_rgn = idx;
@@ -1394,6 +1397,7 @@ again:
 	return 0;
 
 done:
+	==> Allocate object for memory leak check
 	/* Skip kmemleak for kasan_init() due to high volume. */
 	if (end != MEMBLOCK_ALLOC_KASAN)
 		/*

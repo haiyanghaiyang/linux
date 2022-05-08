@@ -6045,6 +6045,7 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 	}
 #endif
 
+    ==> initialize page of each pfn
 	for (pfn = start_pfn; pfn < end_pfn; ) {
 		/*
 		 * There can be holes in boot-time mem_map[]s handed to this
@@ -6053,6 +6054,7 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		if (context == MEMINIT_EARLY) {
 			if (overlap_memmap_init(zone, &pfn))
 				continue;
+            ==> break if defer initialise
 			if (defer_init(nid, pfn, end_pfn))
 				break;
 		}
@@ -6074,6 +6076,7 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		 * check here not to call set_pageblock_migratetype() against
 		 * pfn out of zone.
 		 */
+        ==> To be checked
 		if (!(pfn & (pageblock_nr_pages - 1))) {
 			set_pageblock_migratetype(page, MIGRATE_MOVABLE);
 			cond_resched();
@@ -6415,6 +6418,8 @@ void __init get_pfn_range_for_nid(unsigned int nid,
 	*start_pfn = -1UL;
 	*end_pfn = 0;
 
+    ==> Iterator all memory block ranges for node @nid, and find out
+        minimal and maximum pfn.
 	for_each_mem_pfn_range(i, nid, &this_start_pfn, &this_end_pfn, NULL) {
 		*start_pfn = min(*start_pfn, this_start_pfn);
 		*end_pfn = max(*end_pfn, this_end_pfn);
@@ -6620,6 +6625,7 @@ static void __init calculate_node_totalpages(struct pglist_data *pgdat,
 						     node_end_pfn,
 						     &zone_start_pfn,
 						     &zone_end_pfn);
+		==> find out holes for the node
 		absent = zone_absent_pages_in_node(pgdat->node_id, i,
 						   node_start_pfn,
 						   node_end_pfn);
@@ -6841,6 +6847,7 @@ static void __init free_area_init_core(struct pglist_data *pgdat)
 		 * is used by this zone for memmap. This affects the watermark
 		 * and per-cpu initialisations
 		 */
+		==> how many pages are used for memmap of current zone
 		memmap_pages = calc_memmap_size(size, freesize);
 		if (!is_highmem_idx(j)) {
 			if (freesize >= memmap_pages) {
@@ -6879,8 +6886,11 @@ static void __init free_area_init_core(struct pglist_data *pgdat)
 			continue;
 
 		set_pageblock_order();
+		==> allocate zone->pageblock_flags
 		setup_usemap(pgdat, zone, zone_start_pfn, size);
+		==> initialize freelist of each order for the zone
 		init_currently_empty_zone(zone, zone_start_pfn, size);
+		==> initialize all pages in the zone
 		memmap_init(size, nid, j, zone_start_pfn);
 	}
 }
@@ -6962,8 +6972,10 @@ static void __init free_area_init_node(int nid)
 	pr_info("Initmem setup node %d [mem %#018Lx-%#018Lx]\n", nid,
 		(u64)start_pfn << PAGE_SHIFT,
 		end_pfn ? ((u64)end_pfn << PAGE_SHIFT) - 1 : 0);
+	==> calculate spanned pages and real pages in the node
 	calculate_node_totalpages(pgdat, start_pfn, end_pfn);
 
+	==> allocate pgdat->node_mem_map which is (struct page) for each page in the zone
 	alloc_node_mem_map(pgdat);
 	pgdat_set_deferred_range(pgdat);
 
@@ -7480,6 +7492,7 @@ void __init free_area_init(unsigned long *max_zone_pfn)
 
 	/* Initialise every node */
 	mminit_verify_pageflags_layout();
+    ==> set nr_node_ids
 	setup_nr_node_ids();
 	init_unavailable_mem();
 	for_each_online_node(nid) {

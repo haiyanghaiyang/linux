@@ -2186,6 +2186,7 @@ static inline void ptlock_free(struct page *page) {}
 
 static inline void pgtable_init(void)
 {
+    ==> initialize page table spin lock
 	ptlock_cache_init();
 	pgtable_cache_init();
 }

@@ -499,6 +499,7 @@ initial_pg_fixmap:
 	.fill 1024,4,0
 .globl swapper_pg_dir
 	.align PGD_ALIGN
+==> page directory for kernel
 swapper_pg_dir:
 	.fill 1024,4,0
 	.fill PTI_USER_PGD_FILL,4,0

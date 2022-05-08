@@ -403,7 +403,9 @@ static void __init kmap_init(void)
 	/*
 	 * Cache the first kmap pte:
 	 */
+	==> find virtual address of FIX_KMAP_BEGIN
 	kmap_vstart = __fix_to_virt(FIX_KMAP_BEGIN);
+	==> get pte of kmap_virt
 	kmap_pte = virt_to_kpte(kmap_vstart);
 }
 
@@ -541,6 +543,8 @@ static void __init pagetable_init(void)
 {
 	pgd_t *pgd_base = swapper_pg_dir;
 
+    ==> init page tables for all high memory pages (from PKMAP_BASE to PKMAP_BASE+PAGE_SIZE*LAST_PKMAP)
+    ==> set the first pte as pkmap_page_table
 	permanent_kmaps_init(pgd_base);
 }
 
@@ -712,6 +716,7 @@ void __init paging_init(void)
 
 	__flush_tlb_all();
 
+    ==> generate kmap_pte based on FIX_KMAP_BEGIN
 	kmap_init();
 
 	/*
@@ -719,6 +724,7 @@ void __init paging_init(void)
 	 */
 	olpc_dt_build_devicetree();
 	sparse_init();
+    ==> generate max_zone_pfns[]
 	zone_sizes_init();
 }
 
