@@ -7,6 +7,7 @@
  * implements both the traditional 2-level x86 page tables and the
  * newer 3-level PAE-mode page tables.
  */
+==> If PAE is not enabled, PMD has only one entry
 #ifdef CONFIG_X86_PAE
 # include <asm/pgtable-3level_types.h>
 # define PMD_SIZE	(1UL << PMD_SHIFT)

@@ -83,6 +83,7 @@ static pmd_t * __init one_md_table_init(pgd_t *pgd)
 		return pmd_table;
 	}
 #endif
+    ==> how about change these three simply as pmd_table = pmd_offset(pgd, 0)
 	p4d = p4d_offset(pgd, 0);
 	pud = pud_offset(p4d, 0);
 	pmd_table = pmd_offset(pud, 0);
@@ -96,6 +97,7 @@ static pmd_t * __init one_md_table_init(pgd_t *pgd)
  */
 static pte_t * __init one_page_table_init(pmd_t *pmd)
 {
+    ==> Allocate page for pte if it does not exist
 	if (!(pmd_val(*pmd) & _PAGE_PRESENT)) {
 		pte_t *page_table = (pte_t *)alloc_low_page();
 
@@ -219,6 +221,8 @@ page_table_range_init(unsigned long start, unsigned long end, pgd_t *pgd_base)
 	if (count)
 		adr = alloc_low_pages(count);
 
+	==> Just prepare and allocate pgd and pmd for virtual address from @start to @end
+	==> but do not provide physical mapping.
 	vaddr = start;
 	pgd_idx = pgd_index(vaddr);
 	pmd_idx = pmd_index(vaddr);
@@ -231,7 +235,7 @@ page_table_range_init(unsigned long start, unsigned long end, pgd_t *pgd_base)
 							pmd++, pmd_idx++) {
 			pte = page_table_kmap_check(one_page_table_init(pmd),
 						    pmd, vaddr, pte, &adr);
-
+			==> The actual address mapping by set_pte is not done. Just pgd and pmd table are allocated.
 			vaddr += PMD_SIZE;
 		}
 		pmd_idx = 0;
@@ -297,13 +301,17 @@ kernel_physical_mapping_init(unsigned long start,
 repeat:
 	pages_2m = pages_4k = 0;
 	pfn = start_pfn;
+    ==> get index in pgd for start_pfn
 	pgd_idx = pgd_index((pfn<<PAGE_SHIFT) + PAGE_OFFSET);
+    ==> get address of current pgd
 	pgd = pgd_base + pgd_idx;
 	for (; pgd_idx < PTRS_PER_PGD; pgd++, pgd_idx++) {
+        ==> find first entry of pmd table of current pgd
 		pmd = one_md_table_init(pgd);
 
 		if (pfn >= end_pfn)
 			continue;
+        ==> pmd is only one entry when PAE (Page Address Extension) is disabled. So the index is always 0.
 #ifdef CONFIG_X86_PAE
 		pmd_idx = pmd_index((pfn<<PAGE_SHIFT) + PAGE_OFFSET);
 		pmd += pmd_idx;
@@ -318,6 +326,7 @@ repeat:
 			 * Map with big pages if possible, otherwise
 			 * create normal page tables:
 			 */
+            ==> pse is page size extension. If it is enabled, create 2M page directly without creating page table
 			if (use_pse) {
 				unsigned int addr2;
 				pgprot_t prot = PAGE_KERNEL_LARGE;
@@ -346,10 +355,13 @@ repeat:
 				pfn += PTRS_PER_PTE;
 				continue;
 			}
+			==> Allocate page table and returns virtual address in pte for the page table entry.
 			pte = one_page_table_init(pmd);
 
+            ==> Find page entry in pte. Add PAGE_OFFSET to round address.
 			pte_ofs = pte_index((pfn<<PAGE_SHIFT) + PAGE_OFFSET);
 			pte += pte_ofs;
+            ==> setup all pages in this PTE until end_pfn
 			for (; pte_ofs < PTRS_PER_PTE && pfn < end_pfn;
 			     pte++, pfn++, pte_ofs++, addr += PAGE_SIZE) {
 				pgprot_t prot = PAGE_KERNEL;
@@ -363,6 +375,7 @@ repeat:
 					prot = PAGE_KERNEL_EXEC;
 
 				pages_4k++;
+                ==> Why not set prot once instead of twice
 				if (mapping_iter == 1) {
 					set_pte(pte, pfn_pte(pfn, init_prot));
 					last_map_addr = (pfn << PAGE_SHIFT) + PAGE_SIZE;
@@ -414,6 +427,7 @@ static void __init permanent_kmaps_init(pgd_t *pgd_base)
 {
 	unsigned long vaddr = PKMAP_BASE;
 
+    ==> high memory is mapping to virtual address start from PKMAP_BASE
 	page_table_range_init(vaddr, vaddr + PAGE_SIZE*LAST_PKMAP, pgd_base);
 
 	pkmap_page_table = virt_to_kpte(vaddr);
@@ -533,6 +547,8 @@ void __init early_ioremap_page_table_range_init(void)
 	 * Fixed mappings, only the page table structure has to be
 	 * created - mappings will be set by set_fixmap():
 	 */
+	==> real mapping is done by __set_fixmap()
+	==> The fixed map virtual address starts from FIXADDR_TOP - __end_of_fixed_addresses to FIXADD_TOP
 	vaddr = __fix_to_virt(__end_of_fixed_addresses - 1) & PMD_MASK;
 	end = (FIXADDR_TOP + PMD_SIZE - 1) & PMD_MASK;
 	page_table_range_init(vaddr, end, pgd_base);
@@ -677,6 +693,7 @@ void __init initmem_init(void)
 		highstart_pfn = max_low_pfn;
 	printk(KERN_NOTICE "%ldMB HIGHMEM available.\n",
 		pages_to_mb(highend_pfn - highstart_pfn));
+    ==> high memory is start virtual address of high memory
 	high_memory = (void *) __va(highstart_pfn * PAGE_SIZE - 1) + 1;
 #else
 	high_memory = (void *) __va(max_low_pfn * PAGE_SIZE - 1) + 1;
