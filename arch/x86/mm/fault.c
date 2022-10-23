@@ -179,6 +179,7 @@ static inline pmd_t *vmalloc_sync_one(pgd_t *pgd, unsigned long address)
 	pmd = pmd_offset(pud, address);
 	pmd_k = pmd_offset(pud_k, address);
 
+	==> set user space pmd as kernel if their present is different
 	if (pmd_present(*pmd) != pmd_present(*pmd_k))
 		set_pmd(pmd, *pmd_k);
 
@@ -1330,6 +1331,7 @@ retry:
 		might_sleep();
 	}
 
+	==> find first vma with vma_end >= address
 	vma = find_vma(mm, address);
 	if (unlikely(!vma)) {
 		bad_area(regs, hw_error_code, address);
@@ -1341,6 +1343,7 @@ retry:
 		bad_area(regs, hw_error_code, address);
 		return;
 	}
+	==> expand vma to let address inside the range
 	if (unlikely(expand_stack(vma, address))) {
 		bad_area(regs, hw_error_code, address);
 		return;

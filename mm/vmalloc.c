@@ -595,12 +595,15 @@ link_va(struct vmap_area *va, struct rb_root *root,
 	 * identify its future previous list_head node.
 	 */
 	if (likely(parent)) {
+		==> Get location of parent in sorted list
 		head = &rb_entry(parent, struct vmap_area, rb_node)->list;
+		==> Insert node before paraent in sort list if rb_right != link
 		if (&parent->rb_right != link)
 			head = head->prev;
 	}
 
 	/* Insert to the rb-tree */
+	==> *link = &va->rb_node
 	rb_link_node(&va->rb_node, parent, link);
 	if (root == &free_vmap_area_root) {
 		/*
@@ -706,7 +709,9 @@ insert_vmap_area(struct vmap_area *va,
 	struct rb_node **link;
 	struct rb_node *parent;
 
+	==> find in rbtree for the location to insert link by comparing va_start and va_end
 	link = find_va_links(va, root, NULL, &parent);
+	==> Insert link into both rb tree and sorted list of parent
 	if (link)
 		link_va(va, root, parent, link, head);
 }

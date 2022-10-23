@@ -187,10 +187,12 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 
 static int do_brk_flags(unsigned long addr, unsigned long request, unsigned long flags,
 		struct list_head *uf);
+==> brk is the new virtual address
 SYSCALL_DEFINE1(brk, unsigned long, brk)
 {
 	unsigned long retval;
 	unsigned long newbrk, oldbrk, origbrk;
+	==> Q: Is "current" the process calling brk
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *next;
 	unsigned long min_brk;
@@ -231,6 +233,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 
 	newbrk = PAGE_ALIGN(brk);
 	oldbrk = PAGE_ALIGN(mm->brk);
+	==> new brk and current brk on at same page
 	if (oldbrk == newbrk) {
 		mm->brk = brk;
 		goto success;
@@ -240,6 +243,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	 * Always allow shrinking brk.
 	 * __do_munmap() may downgrade mmap_lock to read.
 	 */
+	==> free memory
 	if (brk <= mm->brk) {
 		int ret;
 
@@ -260,6 +264,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	}
 
 	/* Check against existing mmap mappings. */
+	==> find first virtual memory area with va_end >= oldbrk
 	next = find_vma(mm, oldbrk);
 	if (next && newbrk + PAGE_SIZE > vm_start_gap(next))
 		goto out;
@@ -3038,6 +3043,7 @@ static int do_brk_flags(unsigned long addr, unsigned long len, unsigned long fla
 		return -EINVAL;
 	flags |= VM_DATA_DEFAULT_FLAGS | VM_ACCOUNT | mm->def_flags;
 
+	==> Find address of unmapped area
 	mapped_addr = get_unmapped_area(NULL, addr, len, 0, MAP_FIXED);
 	if (IS_ERR_VALUE(mapped_addr))
 		return mapped_addr;
@@ -3049,8 +3055,10 @@ static int do_brk_flags(unsigned long addr, unsigned long len, unsigned long fla
 	/*
 	 * Clear old maps.  this also does some error checking for us
 	 */
+	==> find_vma_links returns non-zero (-ENOMEM) if any vma overlaps addr..addr+len
 	while (find_vma_links(mm, addr, addr + len, &prev, &rb_link,
 			      &rb_parent)) {
+		==> Unmap addr..addr+len till no vma overlaps this range.
 		if (do_munmap(mm, addr, len, uf))
 			return -ENOMEM;
 	}
@@ -3086,6 +3094,7 @@ static int do_brk_flags(unsigned long addr, unsigned long len, unsigned long fla
 	vma->vm_pgoff = pgoff;
 	vma->vm_flags = flags;
 	vma->vm_page_prot = vm_get_page_prot(flags);
+	==> Add vma into link list and rb tree
 	vma_link(mm, vma, prev, rb_link, rb_parent);
 out:
 	perf_event_mmap(vma);

@@ -112,6 +112,7 @@ static inline void pgd_list_del(pgd_t *pgd)
 
 static void pgd_set_mm(pgd_t *pgd, struct mm_struct *mm)
 {
+	==> mm is saved at beginning of page for pgd
 	virt_to_page(pgd)->pt_mm = mm;
 }
 
@@ -308,6 +309,7 @@ static void pgd_prepopulate_pmd(struct mm_struct *mm, pgd_t *pgd, pmd_t *pmds[])
 	for (i = 0; i < PREALLOCATED_PMDS; i++, pud++) {
 		pmd_t *pmd = pmds[i];
 
+		==> copy kernel mapping which is same for all tasks
 		if (i >= KERNEL_PGD_BOUNDARY)
 			memcpy(pmd, (pmd_t *)pgd_page_vaddr(swapper_pg_dir[i]),
 			       sizeof(pmd_t) * PTRS_PER_PMD);

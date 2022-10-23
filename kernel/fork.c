@@ -1216,6 +1216,7 @@ struct mm_struct *get_task_mm(struct task_struct *task)
 	task_lock(task);
 	mm = task->mm;
 	if (mm) {
+		==> kernel's mm is NULL
 		if (task->flags & PF_KTHREAD)
 			mm = NULL;
 		else

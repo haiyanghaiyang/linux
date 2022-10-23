@@ -3506,6 +3506,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		return 0;
 
 	/* Use the zero-page for reads */
+	==> Setup mapping to zero-page for read fault
 	if (!(vmf->flags & FAULT_FLAG_WRITE) &&
 			!mm_forbids_zeropage(vma->vm_mm)) {
 		entry = pte_mkspecial(pfn_pte(my_zero_pfn(vmf->address),
@@ -3572,6 +3573,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	page_add_new_anon_rmap(page, vma, vmf->address, false);
 	lru_cache_add_inactive_or_unevictable(page, vma);
 setpte:
+	==> write pte in page table
 	set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 
 	/* No need to invalidate - it was non-present before */
@@ -3620,6 +3622,7 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 		smp_wmb(); /* See comment in __pte_alloc() */
 	}
 
+	==> file or other mapping with fault handler
 	ret = vma->vm_ops->fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY |
 			    VM_FAULT_DONE_COW)))
@@ -3863,6 +3866,7 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 	vm_fault_t ret = 0;
 
 	/* Did we COW the page? */
+	==> COW for write
 	if ((vmf->flags & FAULT_FLAG_WRITE) &&
 	    !(vmf->vma->vm_flags & VM_SHARED))
 		page = vmf->cow_page;
@@ -3950,6 +3954,7 @@ static vm_fault_t do_fault_around(struct vm_fault *vmf)
 	int off;
 	vm_fault_t ret = 0;
 
+	=> fault_around_bytes is the size of preallocated bytes for fault
 	nr_pages = READ_ONCE(fault_around_bytes) >> PAGE_SHIFT;
 	mask = ~(nr_pages * PAGE_SIZE - 1) & PAGE_MASK;
 
@@ -4007,6 +4012,7 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 	 * if page by the offset is not ready to be mapped (cold cache or
 	 * something).
 	 */
+	==> use vma->vm_ops->map_pages to map some pages first
 	if (vma->vm_ops->map_pages && fault_around_bytes >> PAGE_SHIFT > 1) {
 		ret = do_fault_around(vmf);
 		if (ret)
@@ -4019,6 +4025,7 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 
 	ret |= finish_fault(vmf);
 	unlock_page(vmf->page);
+	==> free the page
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		put_page(vmf->page);
 	return ret;
