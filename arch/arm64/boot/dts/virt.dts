@@ -347,4 +347,16 @@
 	chosen {
 		stdout-path = "/pl011@9000000";
 	};
+
+	test-char@0 {
+		mailbox = "mbox-tx";
+		interrupts = <0x01 0x45 0x04>;
+		compatible = "test,char";
+	};
+
+	test-char@1 {
+		mailbox = "mbox-rx";
+		interrupts = <0x01 0x46 0x04>;
+		compatible = "test,char";
+    };
 };
