@@ -349,14 +349,27 @@
 	};
 
 	test-char@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
 		mailbox = "mbox-tx";
+		dev-id = <1>;
 		interrupts = <0x01 0x45 0x04>;
+		syscon-spi-cs = <&lp_sys_con 0x28>;
+		reg = <0x1000000 0x2000 0x1001000 0x1000 0x1002000 0x1000 0x1003000 0x1000>;
 		compatible = "test,char";
 	};
 
+	lp_sys_con: syscon@f5d10000 {
+		compatible = "syscon";
+		reg = <0xf5d10000 0x1000>;
+	};
+
+#if 0
 	test-char@1 {
 		mailbox = "mbox-rx";
+		dev-id = <2>;
 		interrupts = <0x01 0x46 0x04>;
 		compatible = "test,char";
     };
+#endif
 };
