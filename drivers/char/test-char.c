@@ -51,6 +51,7 @@ static int test_char_probe(struct platform_device *dev)
 			printk("ctrl_base is successful\n");
 	}
 #endif
+
 	res_irq = platform_get_resource(dev, IORESOURCE_IRQ, 0);
 	if (!res_irq)
 		printk("test char: get resource No IRQ\n");
@@ -77,6 +78,20 @@ static int test_char_remove(struct platform_device *dev)
 	return 0;
 }
 
+static int test_char_suspend(struct platform_device *dev, pm_message_t state)
+{
+	printk("test char suspend: state = %d\n", state.event);
+
+	return 0; //return -1 to prevent suspend
+}
+
+static int test_char_resume(struct platform_device *dev)
+{
+	printk("test char resume\n");
+
+	return 0;
+}
+
 static const struct of_device_id of_test_char_ids[] = {
 	{ .compatible = "test,char" },
 	{}
@@ -87,6 +102,10 @@ static struct platform_device *test_char_platform_device;
 static struct platform_driver test_char_device_driver = {
 	.probe		= test_char_probe,
 	.remove		= test_char_remove,
+#ifdef CONFIG_PM
+	.suspend	= test_char_suspend,
+	.resume		= test_char_resume,
+#endif
 	.driver		= {
 		.name	= "test char",
 		.of_match_table = of_test_char_ids,
