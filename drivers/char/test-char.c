@@ -42,7 +42,6 @@ static int test_char_probe(struct platform_device *dev)
 	else
 		printk("test char: IRQ = %d\n", irq);
 
-#if 0
 	if (of_property_read_bool(node, "syscon-spi-cs")) {
 		ctrl_base = syscon_regmap_lookup_by_phandle(node, "syscon-spi-cs");
 		if (IS_ERR(ctrl_base))
@@ -50,7 +49,6 @@ static int test_char_probe(struct platform_device *dev)
 		else
 			printk("ctrl_base is successful\n");
 	}
-#endif
 
 	res_irq = platform_get_resource(dev, IORESOURCE_IRQ, 0);
 	if (!res_irq)
