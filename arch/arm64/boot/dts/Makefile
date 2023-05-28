@@ -30,3 +30,4 @@ subdir-y += ti
 subdir-y += xilinx
 subdir-y += zte
 dtb-y += virt.dtb
+dtb-y += virt_atf.dtb
