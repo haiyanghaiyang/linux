@@ -32,3 +32,5 @@ subdir-y += tesla
 subdir-y += ti
 subdir-y += toshiba
 subdir-y += xilinx
+dtb-y += virt.dtb
+dtb-y += virt_atf.dtb
