@@ -4,5 +4,6 @@ subdir-y += starfive
 subdir-$(CONFIG_SOC_CANAAN_K210_DTB_BUILTIN) += canaan
 subdir-y += microchip
 dtb-y += virt_riscv64.dtb
+dtb-y += virt_riscv64_coreboot.dtb
 
 obj-$(CONFIG_BUILTIN_DTB) := $(addsuffix /, $(subdir-y))
